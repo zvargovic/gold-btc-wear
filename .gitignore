@@ -1,0 +1,35 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio
+.idea/
+*.iml
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/gradle.xml
+.idea/**/libraries
+.cxx/
+
+# Logs
+*.log
+
+# Keystores (NE commitati produkcijski key!)
+*.jks
+*.keystore
+keystore.properties
+
+# Local props
+local.properties
+
+# Misc
+captures/
+outputs/
+*.apk
+*.aab
+
+# OS
+.DS_Store
+Thumbs.db
