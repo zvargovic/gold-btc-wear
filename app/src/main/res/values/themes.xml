@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App tema za referencu u kodu, bez SplashScreen i bez M3 XML-a -->
+    <style name="Theme.GoldBTCWear" parent="@android:style/Theme.DeviceDefault" />
+    <style name="MainActivityTheme.Starting" parent="@android:style/Theme.DeviceDefault" />
+</resources>
