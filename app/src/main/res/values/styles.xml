@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- jednostavna tema dovoljna za Compose na Wearu -->
+    <style name="Theme.WearGold" parent="@android:style/Theme.DeviceDefault">
+        <!-- Ovdje ne treba ništa posebno -->
+    </style>
+</resources>
