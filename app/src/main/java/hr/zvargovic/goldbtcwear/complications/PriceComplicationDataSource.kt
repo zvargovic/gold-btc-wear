@@ -1,4 +1,2 @@
 package hr.zvargovic.goldbtcwear.complications
-
-class PriceComplicationDataSource {
-}
+class PriceComplicationDataSource

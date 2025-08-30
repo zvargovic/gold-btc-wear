@@ -1,10 +1,10 @@
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+// Za local.properties -> TWELVEDATA_API_KEY
+import com.android.build.gradle.internal.cxx.configure.gradleLocalProperties
 
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
-    id("io.gitlab.arturbosch.detekt") version "1.23.6"
+plugins {
+    id("com.android.application")
+    kotlin("android")                          // Kotlin 2.x
+    id("org.jetbrains.kotlin.plugin.compose")  // Compose compiler plugin za Kotlin 2.x
 }
 
 android {
@@ -18,28 +18,16 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        vectorDrawables.useSupportLibrary = true
+        // Učitaj API key iz local.properties (TWELVEDATA_API_KEY=xxxx)
+        val tdKey = gradleLocalProperties(rootDir, providers)
+            .getProperty("TWELVEDATA_API_KEY") ?: ""
+        buildConfigField("String", "TWELVEDATA_API_KEY", "\"$tdKey\"")
     }
 
-    buildTypes {
-        release {
-            // za sad bez minify; kasnije ćemo uključiti i dodati ProGuard pravila
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-        debug {
-            isMinifyEnabled = false
-        }
-    }
-
+    // Uskladi Java/Kotlin na 17
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // omogućava Java 8+ API-je na starijim API razinama
-        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -47,63 +35,34 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+    // Compose 1.6.8 ↔ compiler ext 1.5.15
     composeOptions {
-        // usklađeno s Compose pluginom
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
-
-    packaging {
-        resources.excludes += setOf(
-            "META-INF/AL2.0",
-            "META-INF/LGPL2.1"
-        )
+        kotlinCompilerExtensionVersion = "1.5.15"
     }
 }
 
 dependencies {
-    // Wear Compose
-    val wearCompose = "1.3.0"
-    implementation("androidx.wear.compose:compose-material:$wearCompose")
-    implementation("androidx.wear.compose:compose-foundation:$wearCompose")
-    implementation("androidx.wear.compose:compose-navigation:$wearCompose")
+    // Jetpack Compose (core)
+    implementation("androidx.compose.ui:ui:1.6.8")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.6.8")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
 
-    // Osnovni Wear widgeti (po potrebi)
-    implementation("androidx.wear:wear:1.3.0")
-
-    // Activity/Compose glue
+    // Activity + Lifecycle
     implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
 
-    // Lifecycle / ViewModel
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+    // Wear Compose (umjesto material3)
+    implementation("androidx.wear.compose:compose-material:1.3.1")
+    implementation("androidx.wear.compose:compose-foundation:1.3.1")
+    implementation("androidx.wear.compose:compose-navigation:1.3.1")
 
-    // WorkManager (za periodične zadatke)
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // Networking
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Networking (za kasnije)
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-
-    // JSON (Moshi)
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
-    implementation("com.squareup.moshi:moshi-adapters:1.15.1")
-
-    // Desugar (Java 8+ API-je)
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
-
-    // Testovi (ostavi kako je iz templatea, po želji nadogradit ćemo kasnije)
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-}
-ktlint {
-    android.set(true)
-    ignoreFailures.set(false)
-}
-
-detekt {
-    buildUponDefaultConfig = true
-    allRules = false
-    autoCorrect = false
+    implementation("com.squareup.moshi:moshi:1.15.0")
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
 }
