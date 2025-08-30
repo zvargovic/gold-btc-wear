@@ -11,6 +11,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -25,12 +26,12 @@ import java.util.Locale
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.nativeCanvas
 
-// Text-on-path (Android)
+// Android text-on-path
 import android.graphics.Path as AndroidPath
 import android.graphics.RectF
 import android.graphics.PathMeasure
 
-// Animated WebP bez Coil-a
+// Animated WebP (bez Coil-a)
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.ImageView
 import android.graphics.drawable.AnimatedImageDrawable
@@ -51,7 +52,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
     fun euro(amount: Double): String = "€" + String.format(Locale.US, "%,.2f", amount)
 
-    // clock za blagi “bob”
+    // anim clock
     var t by remember { mutableStateOf(0f) }
     LaunchedEffect(Unit) {
         var last = 0L
@@ -68,53 +69,86 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // === 1) KONTEJNER S MASKOM (unutra je AndroidView) ===
+        // === 1) Kontejner s maskom (unutra je WebP) ===
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
-                    // nacrtaj sve dijete (AndroidView ispod)
                     drawContent()
 
                     val w = size.width
                     val h = size.height
 
-                    // razina vode (diže se s progress) + blagi bob
+                    // razina vode (55%..90%) + blagi bob
                     val baseLevel = 0.55f + 0.35f * progress
                     val bob = (sin(t * 0.6f) * 0.008f)
                     val levelY = h * (baseLevel + bob)
 
-                    // valovita površina
-                    val amp = 6f
-                    val len1 = w / 1.4f
-                    val len2 = w / 0.9f
-                    val phase1 = t * 1.1f
-                    val phase2 = t * 2.1f + 1.6f
-                    val k = (Math.PI * 2).toFloat()
+                    // --- val parametri (pojačani) ---
+                    val ampBase = 20f            // veći valovi
+                    val ampChop = 5.5f          // kratki “choppy” valovi
+                    val lenLong = w / 1.2f
+                    val lenMid  = w / 0.8f
+                    val lenShort = w / 0.28f    // kratka valna duljina za prskanje
+                    val phaseL = t * 0.9f
+                    val phaseM = t * 1.9f + 1.2f
+                    val phaseS = t * 3.6f + 0.7f
+                    val twoPi = (Math.PI * 2).toFloat()
 
-                    // GORNJI poligon (iznad vala) – izrezujemo ga iz destinacije
+                    fun crestY(x: Float): Float =
+                        levelY +
+                                ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
+                                (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
+                                ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
+
+                    // GORNJI poligon (izrezujemo sve iznad vala)
                     val cutTop = Path().apply {
-                        moveTo(0f, 0f)
-                        lineTo(w, 0f)
-                        lineTo(w, levelY)
+                        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, crestY(w))
                         var x = w
-                        val step = 5f
+                        val step = 4f
                         while (x >= 0f) {
-                            val y = levelY +
-                                    amp * sin((x / len1) * k + phase1) * 0.7f +
-                                    (amp * 0.6f) * sin((x / len2) * k + phase2) * 0.3f
-                            lineTo(x, y); x -= step
+                            lineTo(x, crestY(x))
+                            x -= step
                         }
-                        lineTo(0f, levelY)
+                        lineTo(0f, crestY(0f))
                         close()
                     }
-
-                    // DstOut → sve iznad vala “odreži”; WebP ostaje samo ispod
                     drawPath(cutTop, Color.White, blendMode = BlendMode.DstOut)
+
+                    // === WATER SHADING (1 + 2 kombinacija) ===
+                    // 1) osnovni vodeni gradijent ispod vala
+                    val waterPath = Path().apply {
+                        moveTo(0f, crestY(0f))
+                        lineTo(w, crestY(w))
+                        lineTo(w, h); lineTo(0f, h); close()
+                    }
+                    drawPath(
+                        path = waterPath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0x6633AAFF),  // svjetlije pri površini
+                                Color(0xFF001020)   // tamno prema dnu
+                            ),
+                            startY = levelY,
+                            endY = h
+                        ),
+                        blendMode = BlendMode.Multiply
+                    )
+                    // 2) dodatni depth overlay (još tamnije dno)
+                    val depthBrush = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.35f to Color(0x22000000),
+                        1f to Color(0xAA000000)
+                    )
+                    drawRect(
+                        brush = depthBrush,
+                        topLeft = Offset(0f, levelY),
+                        size = Size(w, h - levelY),
+                        blendMode = BlendMode.Multiply
+                    )
                 }
         ) {
-            // Ovo je SAD dio drawContent-a gore — znači maska ga reže
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -128,34 +162,90 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        // === 2) HIGHLIGHT po rubu površine (iznad maske) ===
+        // === 2) Prijelaz + pjena + spray ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
+
             val baseLevel = 0.55f + 0.35f * progress
             val bob = (sin(t * 0.6f) * 0.008f)
             val levelY = h * (baseLevel + bob)
 
-            val amp = 6f
-            val len1 = w / 1.4f
-            val len2 = w / 0.9f
-            val phase1 = t * 1.1f
-            val phase2 = t * 2.1f + 1.6f
-            val k = (Math.PI * 2).toFloat()
+            // isti parametri kao gore
+            val ampBase = 9f
+            val ampChop = 3.5f
+            val lenLong = w / 1.2f
+            val lenMid  = w / 0.8f
+            val lenShort = w / 0.28f
+            val phaseL = t * 0.9f
+            val phaseM = t * 1.9f + 1.2f
+            val phaseS = t * 3.6f + 0.7f
+            val twoPi = (Math.PI * 2).toFloat()
 
+            fun crestY(x: Float): Float =
+                levelY +
+                        ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
+                        (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
+                        ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
+
+            // putanja grebena
             val crestPath = Path().apply {
-                moveTo(0f, levelY)
+                moveTo(0f, crestY(0f))
                 var x = 0f
-                val step = 6f
+                val step = 4f
                 while (x <= w) {
-                    val y = levelY +
-                            amp * sin((x / len1) * k + phase1) * 0.7f +
-                            (amp * 0.6f) * sin((x / len2) * k + phase2) * 0.3f
-                    lineTo(x, y); x += step
+                    lineTo(x, crestY(x))
+                    x += step
                 }
             }
-            drawPath(crestPath, Color(0x77FFFFFF), style = Stroke(width = 2.2f, cap = StrokeCap.Round))
-            drawPath(crestPath, Color(0x5526B6FF), style = Stroke(width = 1.0f, cap = StrokeCap.Round))
+
+            // Feathered blend — deblji za “zapljuskivanje”
+            val feather = 30f
+            val featherBrush = Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xCC000000),
+                    Color(0x33000000),
+                    Color(0x33B2D6FF),
+                    Color(0x00B2D6FF)
+                ),
+                startY = levelY - feather,
+                endY = levelY + feather
+            )
+            drawPath(crestPath, featherBrush, style = Stroke(width = feather, cap = StrokeCap.Butt))
+
+            // svijetli highlight na samom grebenu
+            drawPath(crestPath, Color(0x99FFFFFF), style = Stroke(width = 2.2f, cap = StrokeCap.Round))
+            drawPath(crestPath, Color(0x6626B6FF), style = Stroke(width = 1.1f, cap = StrokeCap.Round))
+
+            // gušća pjena uz greben
+            val rndSeed = (t * 90f).toInt()
+            var x = 0f
+            val foamStep = 57f // gušće
+            while (x <= w) {
+                val y = crestY(x)
+                val jitterX = ((x.toInt() + rndSeed) % 7 - 3) * 0.5f
+                val jitterY = ((x.toInt() - rndSeed) % 5 - 2) * 0.4f
+                val r = 0.9f + ((x.toInt() + rndSeed) % 3) * 0.45f
+                drawCircle(Color.White.copy(alpha = 0.60f), r, Offset(x + jitterX, y - 1.8f + jitterY))
+                x += foamStep
+            }
+
+            // sitni “spray” iznad grebena (random kapljice malo iznad)
+            var sx = 0f
+            val sprayStep = 18f
+            while (sx <= w) {
+                val y = crestY(sx)
+                // par kapljica iznad
+                val up = 6f + ((sx.toInt() + rndSeed) % 8)
+                val count = 2 + ((sx.toInt() / 30 + rndSeed) % 2)
+                repeat(count) { i ->
+                    val ox = ((i * 7 + rndSeed) % 11 - 5) * 0.7f
+                    val oy = up + ((i + rndSeed) % 5) * 0.8f
+                    val rr = 0.7f + ((i + rndSeed) % 3) * 0.3f
+                    drawCircle(Color.White.copy(alpha = 0.35f), rr, Offset(sx + ox, y - oy))
+                }
+                sx += sprayStep
+            }
         }
 
         // === 3) UI: bezel markeri + request arc + bottom text ===
@@ -182,7 +272,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 drawCircle(bezelColorHi, bubbleR * 0.55f, Offset(x + 0.35f * bubbleR, y - 0.45f * bubbleR))
             }
 
-            // request arc (dno)
+            // request arc
             val arcStroke = 12f
             val inset = arcStroke / 2 + 10f
             val arcRect = Rect(
