@@ -322,12 +322,16 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 drawCircle(Color(0x55FF7A00), dotR, Offset(x, y))
                 drawCircle(Color(0x88FFC07A), dotR * 0.55f, Offset(x + dotR*dotHi*0.3f, y - dotR*dotHi*0.35f))
             }
+            // Marker: snap na *cijelu minutu*
             val millis = System.currentTimeMillis()
-            val hourFrac = ((millis % 3_600_000L).toFloat() / 3_600_000f)
-            val ang = Math.toRadians((hourFrac * 360f - 90f).toDouble()).toFloat()
-            val px = cx + rBezel * cos(ang); val py = cy + rBezel * sin(ang)
-            drawCircle(orangeLine, 4.6f, Offset(px, py))
-            drawCircle(Color.White.copy(alpha = 0.55f), 2.5f, Offset(px + 0.8f, py - 0.8f))
+            val minute = ((millis / 60_000L) % 60).toInt()     // 0..59
+            val angDeg = minute * 6f - 90f
+            val angRad = Math.toRadians(angDeg.toDouble()).toFloat()
+            val px = cx + rBezel * cos(angRad)
+            val py = cy + rBezel * sin(angRad)
+            // marker bubble
+            drawCircle(Color(red = 131, green = 153, blue = 77), 6f, Offset(px, py))
+            drawCircle(Color.Yellow.copy(alpha = 0.95f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
         // === 3) Lijeva SKALA — kompaktna; marker + “0.1%” ===
