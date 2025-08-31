@@ -1,6 +1,6 @@
 [versions]
 # Build & Kotlin
-agp = "8.5.2"
+agp = "8.7.3"
 kotlin = "2.0.20"
 compose-compiler = "1.5.15"
 

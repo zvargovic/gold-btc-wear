@@ -1,21 +1,22 @@
 package hr.zvargovic.goldbtcwear.ui
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -24,7 +25,6 @@ import androidx.wear.compose.material.Text
 import kotlin.math.*
 import java.util.Locale
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.graphics.nativeCanvas
 
 // Android text-on-path
 import android.graphics.Path as AndroidPath
@@ -40,19 +40,41 @@ import hr.zvargovic.goldbtcwear.R
 
 @Composable
 fun GoldStaticScreen(modifier: Modifier = Modifier) {
-    // --- Demo podaci ---
-    val spot = 2315.40
+    // --- Demo vrijednosti (zamijeni fetchom) ---
+    val spotNow = 2315.40
     val premiumPct = 0.0049
-    val buy = spot * (1 + premiumPct)
-    val sell = spot * (1 - premiumPct)
+    val buy = spotNow * (1 + premiumPct)
+    val sell = spotNow * (1 - premiumPct)
 
+    // Ref vrijednosti (placeholderi!)
+    val dailyRef = 2310.00        // referenca za VODU (reset na početku dana)
+    val lastRequestPrice = 2312.0 // referenca za SKALU (posljednji request)
+
+    // Requests (placeholder)
     val usedRequests = 123
-    val maxRequests = 500
-    val progress = (usedRequests.toFloat() / maxRequests.toFloat()).coerceIn(0f, 1f)
+    val maxRequests  = 500
 
+    // ---- Mapiranja ----
+    // VODA: ±15% vs. dailyRef (0.5 = sredina)
+    val deltaDaily = if (dailyRef > 0) (spotNow - dailyRef) / dailyRef else 0.0
+    val levelT = (deltaDaily / 0.15).coerceIn(-1.0, 1.0) // -1..+1
+    val waterLevel = 0.5 + 0.5 * levelT                  // 0..1
+
+    // SKALA: ±0.5% vs. lastRequestPrice (0.1% po crtici, 11 crtica)
+    val deltaHr = if (lastRequestPrice > 0) (spotNow - lastRequestPrice) / lastRequestPrice else 0.0
+    val tick = 0.001     // 0.1%
+    val maxTicks = 5     // ±5 → ±0.5%
+    val rawSteps = (deltaHr / tick).roundToInt()
+    val steps = rawSteps.coerceIn(-maxTicks, maxTicks)
+    val overload = abs(deltaHr) > maxTicks * tick
+
+    fun pctStr(p: Double): String {
+        val sign = if (p >= 0) "+" else ""
+        return "$sign${String.format(Locale.US, "%.1f", p * 100)}%"
+    }
     fun euro(amount: Double): String = "€" + String.format(Locale.US, "%,.2f", amount)
 
-    // anim clock
+    // anim clock (valovi) — mirnije
     var t by remember { mutableStateOf(0f) }
     LaunchedEffect(Unit) {
         var last = 0L
@@ -60,16 +82,29 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             if (last == 0L) last = now
             val dt = (now - last) / 1_000_000_000f
             last = now
-            t += dt
+            t += dt * 0.30f
         }
     }
+
+    // --- Blink animacija kad je overload (marker + label) ---
+    val infiniteTransition = rememberInfiniteTransition(label = "blink")
+    val blinkAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkAlpha"
+    )
+    val markerAlpha = if (overload) blinkAlpha else 1f
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // === 1) Kontejner s maskom (unutra je WebP) ===
+        // === 1) Kontejner s maskom i vodom (WebP ispod) ===
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -80,20 +115,18 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     val w = size.width
                     val h = size.height
 
-                    // razina vode (55%..90%) + blagi bob
-                    val baseLevel = 0.55f + 0.35f * progress
-                    val bob = (sin(t * 0.6f) * 0.008f)
-                    val levelY = h * (baseLevel + bob)
+                    val baseLevel = waterLevel.toFloat()
+                    val levelY = h * baseLevel + (sin(t * 0.35f) * 0.0045f) * h
 
-                    // --- val parametri (pojačani) ---
-                    val ampBase = 20f            // veći valovi
-                    val ampChop = 5.5f          // kratki “choppy” valovi
-                    val lenLong = w / 1.2f
-                    val lenMid  = w / 0.8f
-                    val lenShort = w / 0.28f    // kratka valna duljina za prskanje
-                    val phaseL = t * 0.9f
-                    val phaseM = t * 1.9f + 1.2f
-                    val phaseS = t * 3.6f + 0.7f
+                    // sporiji, dulji valovi
+                    val ampBase = 18f
+                    val ampChop = 4.0f
+                    val lenLong = w / 1.35f
+                    val lenMid  = w / 0.95f
+                    val lenShort = w / 0.36f
+                    val phaseL = t * 0.45f
+                    val phaseM = t * 0.9f + 1.1f
+                    val phaseS = t * 1.6f + 0.6f
                     val twoPi = (Math.PI * 2).toFloat()
 
                     fun crestY(x: Float): Float =
@@ -102,40 +135,25 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                                 (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
                                 ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
 
-                    // GORNJI poligon (izrezujemo sve iznad vala)
                     val cutTop = Path().apply {
                         moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, crestY(w))
-                        var x = w
-                        val step = 4f
-                        while (x >= 0f) {
-                            lineTo(x, crestY(x))
-                            x -= step
-                        }
-                        lineTo(0f, crestY(0f))
-                        close()
+                        var x = w; val step = 4f
+                        while (x >= 0f) { lineTo(x, crestY(x)); x -= step }
+                        lineTo(0f, crestY(0f)); close()
                     }
                     drawPath(cutTop, Color.White, blendMode = BlendMode.DstOut)
 
-                    // === WATER SHADING (1 + 2 kombinacija) ===
-                    // 1) osnovni vodeni gradijent ispod vala
                     val waterPath = Path().apply {
-                        moveTo(0f, crestY(0f))
-                        lineTo(w, crestY(w))
-                        lineTo(w, h); lineTo(0f, h); close()
+                        moveTo(0f, crestY(0f)); lineTo(w, crestY(w)); lineTo(w, h); lineTo(0f, h); close()
                     }
                     drawPath(
                         path = waterPath,
                         brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0x6633AAFF),  // svjetlije pri površini
-                                Color(0xFF001020)   // tamno prema dnu
-                            ),
-                            startY = levelY,
-                            endY = h
+                            colors = listOf(Color(0x6633AAFF), Color(0xFF001020)),
+                            startY = levelY, endY = h
                         ),
                         blendMode = BlendMode.Multiply
                     )
-                    // 2) dodatni depth overlay (još tamnije dno)
                     val depthBrush = Brush.verticalGradient(
                         0f to Color.Transparent,
                         0.35f to Color(0x22000000),
@@ -147,6 +165,20 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                         size = Size(w, h - levelY),
                         blendMode = BlendMode.Multiply
                     )
+
+                    val crestPath = Path().apply {
+                        moveTo(0f, crestY(0f))
+                        var x = 0f; val step = 4f
+                        while (x <= w) { lineTo(x, crestY(x)); x += step }
+                    }
+                    val feather = 28f
+                    val featherBrush = Brush.verticalGradient(
+                        listOf(Color(0xCC000000), Color(0x33000000), Color(0x33B2D6FF), Color(0x00B2D6FF)),
+                        startY = levelY - feather, endY = levelY + feather
+                    )
+                    drawPath(crestPath, featherBrush, style = Stroke(width = feather, cap = StrokeCap.Butt))
+                    drawPath(crestPath, Color(0x99FFFFFF), style = Stroke(width = 2.0f, cap = StrokeCap.Round))
+                    drawPath(crestPath, Color(0x6626B6FF), style = Stroke(width = 1.0f, cap = StrokeCap.Round))
                 }
         ) {
             AndroidView(
@@ -162,156 +194,112 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        // === 2) Prijelaz + pjena + spray ===
+        // === 2) Minutni krug + kružeća točka (1 krug = 1h) — unutra + DUPO veće točkice ===
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
+            val w = size.width; val h = size.height
+            val cx = w / 2f; val cy = h / 2f
+            val radius = min(w, h) / 2f
+            val rBezel = radius * 0.965f     // unutra
+            val dotR = 4.8f                  // duplo veće (prije 2.4f)
+            val dotHi = 0.9f
 
-            val baseLevel = 0.55f + 0.35f * progress
-            val bob = (sin(t * 0.6f) * 0.008f)
-            val levelY = h * (baseLevel + bob)
-
-            // isti parametri kao gore
-            val ampBase = 9f
-            val ampChop = 3.5f
-            val lenLong = w / 1.2f
-            val lenMid  = w / 0.8f
-            val lenShort = w / 0.28f
-            val phaseL = t * 0.9f
-            val phaseM = t * 1.9f + 1.2f
-            val phaseS = t * 3.6f + 0.7f
-            val twoPi = (Math.PI * 2).toFloat()
-
-            fun crestY(x: Float): Float =
-                levelY +
-                        ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
-                        (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
-                        ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
-
-            // putanja grebena
-            val crestPath = Path().apply {
-                moveTo(0f, crestY(0f))
-                var x = 0f
-                val step = 4f
-                while (x <= w) {
-                    lineTo(x, crestY(x))
-                    x += step
-                }
+            for (i in 0 until 60) {
+                val ang = Math.toRadians((i * 6f - 90f).toDouble()).toFloat()
+                val x = cx + rBezel * cos(ang)
+                val y = cy + rBezel * sin(ang)
+                drawCircle(Color(0x558FA3BA), dotR, Offset(x, y))
+                drawCircle(Color(0x99AFC2D8), dotR * 0.55f, Offset(x + dotR*dotHi*0.3f, y - dotR*dotHi*0.35f))
             }
-
-            // Feathered blend — deblji za “zapljuskivanje”
-            val feather = 30f
-            val featherBrush = Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xCC000000),
-                    Color(0x33000000),
-                    Color(0x33B2D6FF),
-                    Color(0x00B2D6FF)
-                ),
-                startY = levelY - feather,
-                endY = levelY + feather
-            )
-            drawPath(crestPath, featherBrush, style = Stroke(width = feather, cap = StrokeCap.Butt))
-
-            // svijetli highlight na samom grebenu
-            drawPath(crestPath, Color(0x99FFFFFF), style = Stroke(width = 2.2f, cap = StrokeCap.Round))
-            drawPath(crestPath, Color(0x6626B6FF), style = Stroke(width = 1.1f, cap = StrokeCap.Round))
-
-            // gušća pjena uz greben
-            val rndSeed = (t * 90f).toInt()
-            var x = 0f
-            val foamStep = 57f // gušće
-            while (x <= w) {
-                val y = crestY(x)
-                val jitterX = ((x.toInt() + rndSeed) % 7 - 3) * 0.5f
-                val jitterY = ((x.toInt() - rndSeed) % 5 - 2) * 0.4f
-                val r = 0.9f + ((x.toInt() + rndSeed) % 3) * 0.45f
-                drawCircle(Color.White.copy(alpha = 0.60f), r, Offset(x + jitterX, y - 1.8f + jitterY))
-                x += foamStep
-            }
-
-            // sitni “spray” iznad grebena (random kapljice malo iznad)
-            var sx = 0f
-            val sprayStep = 18f
-            while (sx <= w) {
-                val y = crestY(sx)
-                // par kapljica iznad
-                val up = 6f + ((sx.toInt() + rndSeed) % 8)
-                val count = 2 + ((sx.toInt() / 30 + rndSeed) % 2)
-                repeat(count) { i ->
-                    val ox = ((i * 7 + rndSeed) % 11 - 5) * 0.7f
-                    val oy = up + ((i + rndSeed) % 5) * 0.8f
-                    val rr = 0.7f + ((i + rndSeed) % 3) * 0.3f
-                    drawCircle(Color.White.copy(alpha = 0.35f), rr, Offset(sx + ox, y - oy))
-                }
-                sx += sprayStep
-            }
+            val millis = System.currentTimeMillis()
+            val hourFrac = ((millis % 3_600_000L).toFloat() / 3_600_000f)
+            val ang = Math.toRadians((hourFrac * 360f - 90f).toDouble()).toFloat()
+            val px = cx + rBezel * cos(ang); val py = cy + rBezel * sin(ang)
+            drawCircle(Color(0xFF2A6AFF), 4.6f, Offset(px, py))
+            drawCircle(Color.White.copy(alpha = 0.6f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // === 3) UI: bezel markeri + request arc + bottom text ===
+        // === 3) Lijeva SKALA — JOŠ SKUPLJA, DUBLJE UNUTRA, DEBLJE CRTICE i MARKER, % NA 6. CRTICI ===
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val cx = w / 2f
-            val cy = h / 2f
-            val radius = min(w, h) / 2f * 0.92f
+            val w = size.width; val h = size.height
+            val cx = w / 2f; val cy = h / 2f
+            val radius = min(w, h) / 2f
 
-            // minute bezel (60 tiny bubbles)
-            val markers = 60
-            val bezelColorMain = Color(0x55B4D2FF)
-            val bezelColorHi = Color(0x88B4D2FF)
-            val rOuter = radius
-            val rInner = radius * 0.965f
-            val bubbleR = 2.2f
-            for (i in 0 until markers) {
-                val ang = Math.toRadians((i / 60f) * 360.0 - 90.0).toFloat()
-                val rx = (rOuter + rInner) / 2f
-                val x = cx + rx * cos(ang)
-                val y = cy + rx * sin(ang)
-                drawCircle(bezelColorMain, bubbleR, Offset(x, y))
-                drawCircle(bezelColorHi, bubbleR * 0.55f, Offset(x + 0.35f * bubbleR, y - 0.45f * bubbleR))
+            val span = 50f
+            val start = 180f - span / 2f
+            val stepAng = span / (maxTicks * 2)
+
+            val outer = radius * 0.920f
+            val inner = radius * 0.860f
+
+            // crtice
+            for (i in -maxTicks..maxTicks) {
+                val ang = Math.toRadians((start + (i + maxTicks) * stepAng).toDouble()).toFloat()
+                val cosA = cos(ang); val sinA = sin(ang)
+                val p1 = Offset(cx + inner * cosA, cy + inner * sinA)
+                val p2 = Offset(cx + outer * cosA, cy + outer * sinA)
+                val col = if (i == 0) Color(0xFFB0BAC8) else Color(0x668BA0B8)
+                val sw = if (i == 0) 5.6f else 4.2f
+                drawLine(col, p1, p2, strokeWidth = sw, cap = StrokeCap.Round)
             }
 
-            // request arc
-            val arcStroke = 12f
-            val inset = arcStroke / 2 + 10f
-            val arcRect = Rect(
-                left = cx - radius + inset,
-                top = cy - radius + inset,
-                right = cx + radius - inset,
-                bottom = cy + radius - inset
+            // marker
+            val markerSteps = steps
+            val markerAng = start + (markerSteps + maxTicks) * stepAng
+            val a = Math.toRadians(markerAng.toDouble()).toFloat()
+            val mInner = inner - 3f
+            val mOuter = outer + 6f
+            val p1 = Offset(cx + mInner * cos(a), cy + mInner * sin(a))
+            val p2 = Offset(cx + mOuter * cos(a), cy + mOuter * sin(a))
+            val markerColor = when {
+                markerSteps > 0 -> Color(0xFF1F6C35)
+                markerSteps < 0 -> Color(0xFF7A231D)
+                else -> Color(0xFFB0BAC8)
+            }
+            drawLine(
+                markerColor.copy(alpha = markerAlpha),
+                p1, p2,
+                strokeWidth = 7.6f,
+                cap = StrokeCap.Round
             )
-            val arcBlue = Color(0xFF2A6AFF)
-            val start = 20f
-            val sweep = 140f
-            drawArc(arcBlue.copy(alpha = 0.18f), start, sweep, false, arcRect.topLeft, arcRect.size,
-                style = Stroke(width = arcStroke, cap = StrokeCap.Round))
-            drawArc(arcBlue, start, sweep * progress, false, arcRect.topLeft, arcRect.size,
-                style = Stroke(width = arcStroke, cap = StrokeCap.Round))
 
-            // bottom arc text
-            val arcText = "Requests  $usedRequests / $maxRequests"
-            val textSizePx = 13.sp.toPx()
-            val p = android.graphics.Paint().apply {
+            // natpis na zamišljenoj 6. crtici (−0.6%)
+            val showPct = if (overload) deltaHr else markerSteps * tick.toDouble()
+            val txt = pctStr(showPct)
+            val txtPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = android.graphics.Color.WHITE
-                textSize = textSizePx
+                color = (if (showPct >= 0) 0xFF1F6C35 else 0xFF7A231D).toInt()
+                textSize = 11.sp.toPx()
+                alpha = (markerAlpha * 255).toInt()
                 typeface = android.graphics.Typeface.create(
-                    android.graphics.Typeface.DEFAULT,
-                    android.graphics.Typeface.NORMAL
+                    android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD
                 )
             }
-            val textRadius = radius * 0.955f
-            val oval = RectF(cx - textRadius, cy - textRadius, cx + textRadius, cy + textRadius)
-            val path = AndroidPath().apply { addArc(oval, 160f, -140f) }
-            val pathLen = PathMeasure(path, false).length
-            val textLen = p.measureText(arcText)
-            val hOff = ((pathLen - textLen) / 2f).coerceAtLeast(0f)
-            val vOff = -1.5f
-            drawIntoCanvas { it.nativeCanvas.drawTextOnPath(arcText, path, hOff, vOff, p) }
+
+            // računamo kut baš kao da crtamo crticu i = -6
+            val extraStep = -7
+            val txtAng = start + (extraStep + maxTicks) * stepAng
+            val angRad = Math.toRadians(txtAng.toDouble()).toFloat()
+
+// ↓ POVLAČENJE UNUTRA: promijeniš samo ovu vrijednost
+            val rText = outer - 2f      // probaj -12f do -20f po ukusu
+            val lx = cx + rText * cos(angRad)
+            val ly = cy + rText * sin(angRad)
+
+// rotiraj natpis da prati kut crtice, bez zrcaljenja
+            drawIntoCanvas {
+                it.save()
+                it.rotate(txtAng +270f, lx, ly)         // +180f uklanja mirror
+                it.nativeCanvas.drawText(
+                    txt,
+                    lx - txtPaint.measureText(txt) / 2f, // ispravno centriranje (prije je bilo /1f)
+                    ly - 1.5f,                           // sitan lift baselinea (po želji)
+                    txtPaint
+                )
+                it.restore()
+            }
         }
 
-        // === 4) FOREGROUND: naslov, cijena, BUY/SELL ===
+        // === 4) Foreground: SPOT + BUY/SELL brojke ===
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -321,42 +309,82 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(28.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Gold (EUR/oz)", fontSize = 14.sp, color = Color(0xFFD0D7E6))
-                Text(euro(spot), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF2F4FA))
+                Text(euro(spotNow), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF2F4FA))
             }
             Spacer(Modifier.height(12.dp))
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SquareSwatch(Color(0xFF1F6C35)); Spacer(Modifier.width(10.dp))
-                Text("BUY", fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.width(18.dp))
-                Text("SELL", fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.width(10.dp))
-                SquareSwatch(Color(0xFF7A231D))
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(euro(buy), fontSize = 16.sp, color = Color(0xFFF2F4FA),
+                Text(euro(buy),  fontSize = 16.sp, color = Color(0xFFF2F4FA),
                     fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip)
                 Text(euro(sell), fontSize = 16.sp, color = Color(0xFFF2F4FA),
                     fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip)
             }
             Spacer(Modifier.weight(1f))
         }
-    }
-}
 
-@Composable
-private fun SquareSwatch(color: Color) {
-    Box(
-        modifier = Modifier
-            .size(14.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(color)
-    )
+        // === 5) Requests po DNU — tekst po luku: "Requests 123/500" ===
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width; val h = size.height
+            val cx = w / 2f; val cy = h / 2f
+            val radius = min(w, h) / 2f
+
+            val arcText = "Requests  $usedRequests/$maxRequests"
+            val textSizePx = 11.sp.toPx()
+            val p = android.graphics.Paint().apply {
+                isAntiAlias = true
+                color = android.graphics.Color.argb(220, 202, 212, 228) // #CAD4E4 ~ 0.86 alpha
+                textSize = textSizePx
+                typeface = android.graphics.Typeface.create(
+                    android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL
+                )
+            }
+            val textRadius = radius * 0.86f
+            val oval = RectF(cx - textRadius, cy - textRadius, cx + textRadius, cy + textRadius)
+            val path = AndroidPath().apply { addArc(oval, 160f, -140f) }
+            val pathLen = PathMeasure(path, false).length
+            val textLen = p.measureText(arcText)
+            val hOff = ((pathLen - textLen) / 2f).coerceAtLeast(0f)
+            drawIntoCanvas { it.nativeCanvas.drawTextOnPath(arcText, path, hOff, 0f, p) }
+        }
+
+        // === 6) "MOKRI" EFEKT NA POTOPLJENOM TEKSTU ===
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width; val h = size.height
+            val levelY = h * waterLevel.toFloat() + (sin(t * 0.35f) * 0.0045f) * h
+
+            val ampBase = 18f
+            val ampChop = 4.0f
+            val lenLong = w / 1.35f
+            val lenMid  = w / 0.95f
+            val lenShort = w / 0.36f
+            val phaseL = t * 0.45f
+            val phaseM = t * 0.9f + 1.1f
+            val phaseS = t * 1.6f + 0.6f
+
+            fun crestY(x: Float): Float =
+                levelY +
+                        ampBase * sin((x / lenLong) * (Math.PI*2).toFloat() + phaseL) * 0.65f +
+                        (ampBase * 0.55f) * sin((x / lenMid) * (Math.PI*2).toFloat() + phaseM) * 0.35f +
+                        ampChop * sin((x / lenShort) * (Math.PI*2).toFloat() + phaseS) * 0.5f
+
+            val belowPath = Path().apply {
+                moveTo(0f, crestY(0f)); lineTo(w, crestY(w)); lineTo(w, h); lineTo(0f, h); close()
+            }
+            clipPath(belowPath) {
+                drawRect(Color(0x3326B6FF), blendMode = BlendMode.Multiply)
+                val stripeH = 6f
+                var y = levelY + 8f
+                val gloss = Color.White.copy(alpha = 0.06f)
+                while (y < h) {
+                    drawRect(gloss, topLeft = Offset(0f, y), size = Size(w, 1.2f))
+                    y += stripeH + 2f
+                }
+            }
+        }
+    }
 }
