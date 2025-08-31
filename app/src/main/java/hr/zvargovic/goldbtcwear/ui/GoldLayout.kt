@@ -101,10 +101,14 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
     // --- Orange theme boje ---
     val orangeDim   = Color(0x66FF7A00)   // prigušeni narančasti akcent
-    val orangeLine  = Color(0xFFFF7A00)   // glavni narančasti akcent
-    val orangeLite  = Color(0xFFFFA040)   // svjetliji naglasak
-    val orangeDeep  = Color(0xFFCC7722)   // tamniji narančasti
-    val warmWhite   = Color(0xFFDCD3C8)   // topla bijela za tekst
+    val orangeLine  = Color(0xFFFF7A00)   // glavni narančasti akcent (spot + base cijene)
+    val orangeLite  = Color(0xFFFFA040)
+    val orangeDeep  = Color(0xFFCC7722)
+    val warmWhite   = Color(0xFFDCD3C8)
+
+    // JAKI tintovi (traženi): BUY/SELL + marker + “0.1%”
+    val buyTint  = Color(0xFF2FBF6B) // jača, svjetlija zelena
+    val sellTint = Color(0xFFE0524D) // jača crvena
 
     Box(
         modifier = modifier
@@ -232,7 +236,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawCircle(Color.White.copy(alpha = 0.55f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // === 3) Lijeva SKALA — kompaktna, deblje crtice, marker narančast, % na 6. crtici ===
+        // === 3) Lijeva SKALA — kompaktna; marker + “0.1%” u zeleno/crvenom ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -256,7 +260,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 drawLine(col, p1, p2, strokeWidth = sw, cap = StrokeCap.Round)
             }
 
-            // marker (narančasti gamut; overload treperi via markerAlpha)
+            // marker — sada striktno green/red (ne narančasti)
             val markerSteps = steps
             val markerAng = start + (markerSteps + maxTicks) * stepAng
             val a = Math.toRadians(markerAng.toDouble()).toFloat()
@@ -265,12 +269,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val p1 = Offset(cx + mInner * cos(a), cy + mInner * sin(a))
             val p2 = Offset(cx + mOuter * cos(a), cy + mOuter * sin(a))
             val markerColor = when {
-                markerSteps > 0 -> orangeLite
-                markerSteps < 0 -> orangeLine
-                else -> orangeDeep
+                markerSteps > 0 -> buyTint
+                markerSteps < 0 -> sellTint
+                else -> warmWhite.copy(alpha = 0.85f)
             }
             drawLine(
-                markerColor.copy(alpha = markerAlpha),
+                markerColor.copy(alpha = 0.75f * markerAlpha),
                 p1, p2,
                 strokeWidth = 7.6f,
                 cap = StrokeCap.Round
@@ -279,21 +283,28 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             // natpis na zamišljenoj 6. crtici (−0.6%), poravnat po sredini crtice
             val showPct = if (overload) deltaHr else markerSteps * tick.toDouble()
             val txt = pctStr(showPct)
+            val baseLabelColor = if (showPct >= 0) buyTint else sellTint
+            val softLabel = androidx.compose.ui.graphics.lerp(warmWhite, baseLabelColor, 0.55f)
             val txtPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = 0xFFFF7A00.toInt()
+                // Compose Color → ARGB int
+                color = ((softLabel.alpha * 255).roundToInt() shl 24) or
+                        ((softLabel.red * 255).roundToInt() shl 16) or
+                        ((softLabel.green * 255).roundToInt() shl 8) or
+                        ((softLabel.blue * 255).roundToInt())
                 textSize = 11.sp.toPx()
-                alpha = (markerAlpha * 255).toInt()
+                // malo niža vidljivost + poštuj blink alpha
+                alpha = (0.85f * markerAlpha * 255).toInt()
                 typeface = android.graphics.Typeface.create(
                     android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD
                 )
             }
 
-            val extraStep = -7                       // tvoje trenutno poravnanje
+            val extraStep = -7
             val txtAng = start + (extraStep + maxTicks) * stepAng
             val angRad = Math.toRadians(txtAng.toDouble()).toFloat()
 
-            val rText = (inner + outer) / 2f        // CENTAR crtice (ne outer)
+            val rText = (inner + outer) / 2f
             val cxT = cx + rText * cos(angRad)
             val cyT = cy + rText * sin(angRad)
 
@@ -304,7 +315,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawIntoCanvas { c ->
                 c.save()
                 c.translate(cxT, cyT)
-                c.rotate(txtAng + 270f) // +180f uklanja mirror
+                c.rotate(txtAng + 270f) // OSTAVLJENO točno prema referenci
                 c.nativeCanvas.drawText(
                     txt,
                     -halfTextW,
@@ -324,12 +335,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         ) {
             Spacer(Modifier.height(28.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Gold (EUR/oz)", fontSize = 14.sp, color = warmWhite.copy(alpha = 0.85f))
+                Text("Gold (EUR/oz)", fontSize = 14.sp, color = orangeLine)
                 Text(
                     euro(spotNow),
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF5F1EB)
+                    color = orangeLine   // SPOT narančast
                 )
             }
             Spacer(Modifier.height(36.dp))
@@ -341,28 +352,30 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    euro(buy),
-                    fontSize = 16.sp,
-                    color = Color(0xFFF5F1EB),
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip
+                // BUY — narančasta baza + JAK zeleni štih
+                TintedPrice(
+                    text = euro(buy),
+                    baseColor = orangeLine,
+                    tint = buyTint,
+                    tintAlpha = 0.65f,  // pojačano
+                    fontSizeSp = 16,
+                    weight = FontWeight.SemiBold
                 )
-                Text(
-                    euro(sell),
-                    fontSize = 16.sp,
-                    color = Color(0xFFF5F1EB),
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip
+                // SELL — narančasta baza + JAK crveni štih
+                TintedPrice(
+                    text = euro(sell),
+                    baseColor = orangeLine,
+                    tint = sellTint,
+                    tintAlpha = 0.65f,  // pojačano
+                    fontSizeSp = 16,
+                    weight = FontWeight.SemiBold
                 )
             }
 
             Spacer(Modifier.weight(1f))
         }
 
-        // === 5) Requests po DNU — topla tipografija: "Requests 123/500" ===
+        // === 5) Requests po DNU — topliji luk: "Requests 123/500" ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -372,7 +385,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val textSizePx = 11.sp.toPx()
             val p = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = android.graphics.Color.argb(230, 255, 210, 170) // toplo-bijeli ton
+                color = android.graphics.Color.argb(230, 255, 210, 170)
                 textSize = textSizePx
                 typeface = android.graphics.Typeface.create(
                     android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL
@@ -387,7 +400,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawIntoCanvas { it.nativeCanvas.drawTextOnPath(arcText, path, hOff, 0f, p) }
         }
 
-        // === 6) "MOKRI" EFEKT NA POTOPLJENOM TEKSTU — narančasti overlay ===
+        // === 6) “MOKRI” EFEKT (narančasti overlay pod vodom) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val levelY = h * waterLevel.toFloat() + (sin(t * 0.35f) * 0.0045f) * h
@@ -411,7 +424,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 moveTo(0f, crestY(0f)); lineTo(w, crestY(w)); lineTo(w, h); lineTo(0f, h); close()
             }
             clipPath(belowPath) {
-                drawRect(orangeLine.copy(alpha = 0.2f), blendMode = BlendMode.Multiply)
+                drawRect(orangeLine.copy(alpha = 0.20f), blendMode = BlendMode.Multiply)
                 val stripeH = 6f
                 var y = levelY + 8f
                 val gloss = Color.White.copy(alpha = 0.05f)
@@ -421,5 +434,38 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Text s narančastom bazom + kolor-tint (BUY=green / SELL=red).
+ * Offscreen + SrcAtop: tint se primjenjuje samo preko nacrtanog teksta (a ne pozadine).
+ */
+@Composable
+private fun TintedPrice(
+    text: String,
+    baseColor: Color,
+    tint: Color,
+    tintAlpha: Float,
+    fontSizeSp: Int,
+    weight: FontWeight
+) {
+    Box(
+        modifier = Modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                drawRect(tint.copy(alpha = tintAlpha), blendMode = BlendMode.SrcAtop)
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = fontSizeSp.sp,
+            color = baseColor,
+            fontWeight = weight,
+            maxLines = 1,
+            overflow = TextOverflow.Clip
+        )
     }
 }
