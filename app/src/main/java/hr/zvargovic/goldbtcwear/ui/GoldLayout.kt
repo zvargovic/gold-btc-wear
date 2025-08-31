@@ -211,6 +211,116 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             )
         }
 
+        // === 1b) Suptilni mjehurići koji izlaze iz vode i rasplinjuju se gore ===
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+
+            // Re-derive trenutni level i valnu funkciju identičnu vodenoj,
+            // kako bi mjehurići točno "izlazili" iz grebena vala.
+            val baseLevel = waterLevel.toFloat()
+            val levelY = h * baseLevel + (sin(t * 0.35f) * 0.0045f) * h
+
+            val ampBase = 18f
+            val ampChop = 4.0f
+            val lenLong = w / 1.35f
+            val lenMid  = w / 0.95f
+            val lenShort = w / 0.36f
+            val phaseL = t * 0.45f
+            val phaseM = t * 0.9f + 1.1f
+            val phaseS = t * 1.6f + 0.6f
+            val twoPi = (Math.PI * 2).toFloat()
+
+            fun crestY(x: Float): Float =
+                levelY +
+                        ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
+                        (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
+                        ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
+
+            // Proceduralni, “bez stanja” emiteri duž širine.
+            // Svaki "bin" emituje jedan mjehurić po ciklusu; životni ciklus ~2.8s.
+            val stepX = 18f
+            val riseMin = 22f
+            val riseMax = 46f
+            val life = 2.8f
+            val tNorm = (t / life)
+
+            fun hash01(i: Int): Float {
+                // jednostavan hash → [0,1)
+                val x = ((i * 1664525) xor (i shl 13)) * 1013904223
+                // & 0x7fffffff i / 1e9f da dobijemo nešto glatko, ali deterministicno
+                return ((x and 0x7fffffff) % 1000000) / 1000000f
+            }
+
+            var x = 0f
+            while (x <= w) {
+                val i = (x / stepX).roundToInt()
+                val seed = hash01(i)
+                // svaka traka ima pomak u vremenu:
+                val phase = (tNorm + seed * 0.73f)
+                val frac = phase - floor(phase) // 0..1 unutar ciklusa
+
+                // Početna pozicija — točno iznad grebena
+                val y0 = crestY(x) - 2f
+
+                // Easing za uspon (sporije na kraju)
+                val e = (1f - (1f - frac) * (1f - frac))
+                val rise = riseMin + (riseMax - riseMin) * (0.4f + 0.6f * seed)
+                val y = y0 - e * rise
+
+                // Diskretno: crtamo samo u gornjoj crnoj zoni (iznad vode + buffer),
+                // i gasimo kad pređe ~gornjih 45% ekrana.
+                if (y < levelY - 6f && y > h * 0.08f) {
+                    // Maksimalna veličina mjehura ≈ visina fonta SPOT cijene (30.sp)
+                    val spotPx = 30.sp.toPx()
+                    fun flerp(a: Float, b: Float, t: Float) = a + (b - a) * t
+                    val maxR = spotPx * 0.5f        // radijus ~ pola visine fonta
+                    val minR = maxR * 0.25f         // najmanji mjehur (diskretno)
+                    val baseR = flerp(minR, maxR, seed)
+                    // Mjehurić lagano raste kroz životni ciklus, ali ne prelazi maxR
+                    val r = (baseR * (0.85f + 0.35f * e)).coerceAtMost(maxR)
+
+                    // Alpha opada kroz vrijeme; vrlo suptilno (da ne smeta UI-u)
+                    val a = (0.18f * (1f - frac)) * 0.85f
+
+                    // Blagi pomak udesno/lijevo (kao rasplinjavanje vjetrom)
+                    val sway = (sin((t + seed * 7f) * 0.9f) * 2.0f)
+
+                    // Glavni mjehurić
+                    drawCircle(
+                        color = Color.White.copy(alpha = a * 0.75f),
+                        radius = r,
+                        center = Offset(x + sway, y)
+                    )
+                    // Unutarnji highlight
+                    drawCircle(
+                        color = Color.White.copy(alpha = a),
+                        radius = r * 0.55f,
+                        center = Offset(x + sway + r * 0.35f, y - r * 0.35f)
+                    )
+
+                    // Na kraju života — “rasplinjavanje” u sitne čestice
+                    if (frac > 0.65f) {
+                        val k = ((frac - 0.65f) / 0.35f).coerceIn(0f, 1f) // 0..1
+                        val dots = 3
+                        for (d in 0 until dots) {
+                            val ang = twoPi * (seed * 13f + d * 0.33f)
+                            val rr = r * (1.6f + 0.6f * d)
+                            val ox = cos(ang) * rr * k
+                            val oy = sin(ang) * rr * k
+                            drawCircle(
+                                color = Color.White.copy(alpha = a * (0.5f * (1f - k))),
+                                radius = r * (0.18f + 0.10f * d),
+                                center = Offset(x + sway + ox, y - 2f + oy)
+                            )
+                        }
+                    }
+                }
+
+                x += stepX
+            }
+        }
+
         // === 2) Minutni krug + kružeća točka (1 krug = 1h) — unutra + duplo veće točkice ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
