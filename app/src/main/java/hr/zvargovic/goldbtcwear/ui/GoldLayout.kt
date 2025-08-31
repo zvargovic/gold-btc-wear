@@ -1,4 +1,6 @@
+
 package hr.zvargovic.goldbtcwear.ui
+
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Text
 import kotlin.math.*
 import java.util.Locale
+
 import androidx.compose.runtime.withFrameNanos
 
 // Android text-on-path
@@ -37,6 +40,10 @@ import android.widget.ImageView
 import android.graphics.drawable.AnimatedImageDrawable
 import androidx.core.content.ContextCompat
 import hr.zvargovic.goldbtcwear.R
+
+enum class PriceService { TwelveData, Yahoo }
+
+
 
 @Composable
 fun GoldStaticScreen(modifier: Modifier = Modifier) {
@@ -109,6 +116,16 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     // JAKI tintovi (traženi): BUY/SELL + marker + “0.1%”
     val buyTint  = Color(0xFF2FBF6B) // jača, svjetlija zelena
     val sellTint = Color(0xFFE0524D) // jača crvena
+
+    // Aktivni servis (placeholder; kasnije veži na stvarni state)
+    var activeService by remember { mutableStateOf(PriceService.TwelveData) }
+
+    // Animirani cilj mjehurića libele po servisu (+5 = TwelveData, -5 = Yahoo)
+    val bubbleStep by animateFloatAsState(
+        targetValue = if (activeService == PriceService.TwelveData) 5f else -5f,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        label = "bubbleStep"
+    )
 
     Box(
         modifier = modifier
@@ -434,6 +451,71 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 )
                 c.restore()
             }
+
+            // --- LIBELA (kapsula po istom luku kao skala) ---
+            // Geometrija libele: uži prsten između inner/outer
+            val tubeInner = inner + 2f
+            val tubeOuter = outer - 2f
+            val tubeWidth = (tubeOuter - tubeInner).coerceAtLeast(5f) // ~6–8 px prema ekranu
+            val tubeR = (tubeInner + tubeOuter) / 2f
+            val tubeRect = Rect(
+                left = cx - tubeR,
+                top = cy - tubeR,
+                right = cx + tubeR,
+                bottom = cy + tubeR
+            )
+
+            // Stakleni “track” (poluprozirni narančasti, s naglaskom)
+            drawArc(
+                color = orangeDim.copy(alpha = 0.40f),
+                startAngle = start,
+                sweepAngle = span,
+                useCenter = false,
+                topLeft = tubeRect.topLeft,
+                size = tubeRect.size,
+                style = Stroke(width = tubeWidth, cap = StrokeCap.Round)
+            )
+            // tanki highlight po gornjem rubu
+            drawArc(
+                color = Color.White.copy(alpha = 0.12f),
+                startAngle = start,
+                sweepAngle = span,
+                useCenter = false,
+                topLeft = tubeRect.topLeft,
+                size = tubeRect.size,
+                style = Stroke(width = tubeWidth * 0.30f, cap = StrokeCap.Round)
+            )
+            // Cilj mjehurića po servisu izražen u "koracima" skale, animiran izvan Canvas-a
+            val targetStep = bubbleStep
+            val targetAng = start + (targetStep + maxTicks) * stepAng
+
+            // Pozicija mjehurića na kapsuli
+            val bRad = Math.toRadians(targetAng.toDouble()).toFloat()
+            val bx = cx + tubeR * cos(bRad)
+            val by = cy + tubeR * sin(bRad)
+
+            // Veličina mjehurića ~ 70–80% debljine kapsule
+            val bubbleR = tubeWidth * 0.75f
+
+            // Glavni mjehurić (staklast, diskretan)
+            drawCircle(
+                color = Color.White.copy(alpha = 0.28f),
+                radius = bubbleR,
+                center = Offset(bx, by)
+            )
+            // unutarnji specular highlight
+            drawCircle(
+                color = Color.White.copy(alpha = 0.55f),
+                radius = bubbleR * 0.50f,
+                center = Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f)
+            )
+            // maleni “drop shadow” za volumen
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.18f),
+                radius = bubbleR * 0.98f,
+                center = Offset(bx, by + bubbleR * 0.20f),
+                blendMode = BlendMode.Multiply
+            )
         }
 
         // === 4) Foreground: SPOT + BUY/SELL brojke (vertikalno) ===
