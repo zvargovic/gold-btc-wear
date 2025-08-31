@@ -99,6 +99,13 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     )
     val markerAlpha = if (overload) blinkAlpha else 1f
 
+    // --- Orange theme boje ---
+    val orangeDim   = Color(0x66FF7A00)   // prigušeni narančasti akcent
+    val orangeLine  = Color(0xFFFF7A00)   // glavni narančasti akcent
+    val orangeLite  = Color(0xFFFFA040)   // svjetliji naglasak
+    val orangeDeep  = Color(0xFFCC7722)   // tamniji narančasti
+    val warmWhite   = Color(0xFFDCD3C8)   // topla bijela za tekst
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -135,6 +142,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                                 (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
                                 ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
 
+                    // maskiraj sve iznad vala
                     val cutTop = Path().apply {
                         moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, crestY(w))
                         var x = w; val step = 4f
@@ -143,21 +151,25 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     }
                     drawPath(cutTop, Color.White, blendMode = BlendMode.DstOut)
 
+                    // Voda — tonirana na narančasto
                     val waterPath = Path().apply {
                         moveTo(0f, crestY(0f)); lineTo(w, crestY(w)); lineTo(w, h); lineTo(0f, h); close()
                     }
                     drawPath(
                         path = waterPath,
                         brush = Brush.verticalGradient(
-                            colors = listOf(Color(0x6633AAFF), Color(0xFF001020)),
+                            colors = listOf(
+                                Color(0x66FF7A00), // topli narančasti tint pri površini
+                                Color(0xFF1A0A00)  // tamno smeđe/crno prema dnu
+                            ),
                             startY = levelY, endY = h
                         ),
                         blendMode = BlendMode.Multiply
                     )
                     val depthBrush = Brush.verticalGradient(
                         0f to Color.Transparent,
-                        0.35f to Color(0x22000000),
-                        1f to Color(0xAA000000)
+                        0.35f to Color(0x33220000),
+                        1f to Color(0xAA110000)
                     )
                     drawRect(
                         brush = depthBrush,
@@ -166,6 +178,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                         blendMode = BlendMode.Multiply
                     )
 
+                    // rub vala (feather + naglasci)
                     val crestPath = Path().apply {
                         moveTo(0f, crestY(0f))
                         var x = 0f; val step = 4f
@@ -173,12 +186,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     }
                     val feather = 28f
                     val featherBrush = Brush.verticalGradient(
-                        listOf(Color(0xCC000000), Color(0x33000000), Color(0x33B2D6FF), Color(0x00B2D6FF)),
+                        listOf(Color(0xCC000000), Color(0x33000000), orangeDim, Color.Transparent),
                         startY = levelY - feather, endY = levelY + feather
                     )
                     drawPath(crestPath, featherBrush, style = Stroke(width = feather, cap = StrokeCap.Butt))
                     drawPath(crestPath, Color(0x99FFFFFF), style = Stroke(width = 2.0f, cap = StrokeCap.Round))
-                    drawPath(crestPath, Color(0x6626B6FF), style = Stroke(width = 1.0f, cap = StrokeCap.Round))
+                    drawPath(crestPath, orangeLine.copy(alpha = 0.6f), style = Stroke(width = 1.2f, cap = StrokeCap.Round))
                 }
         ) {
             AndroidView(
@@ -194,31 +207,32 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        // === 2) Minutni krug + kružeća točka (1 krug = 1h) — unutra + DUPO veće točkice ===
+        // === 2) Minutni krug + kružeća točka (1 krug = 1h) — unutra + duplo veće točkice ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
             val radius = min(w, h) / 2f
-            val rBezel = radius * 0.965f     // unutra
-            val dotR = 4.8f                  // duplo veće (prije 2.4f)
+            val rBezel = radius * 0.965f
+            val dotR = 4.8f
             val dotHi = 0.9f
 
             for (i in 0 until 60) {
                 val ang = Math.toRadians((i * 6f - 90f).toDouble()).toFloat()
                 val x = cx + rBezel * cos(ang)
                 val y = cy + rBezel * sin(ang)
-                drawCircle(Color(0x558FA3BA), dotR, Offset(x, y))
-                drawCircle(Color(0x99AFC2D8), dotR * 0.55f, Offset(x + dotR*dotHi*0.3f, y - dotR*dotHi*0.35f))
+                // tople “bubble” točkice
+                drawCircle(Color(0x55FF7A00), dotR, Offset(x, y))
+                drawCircle(Color(0x88FFC07A), dotR * 0.55f, Offset(x + dotR*dotHi*0.3f, y - dotR*dotHi*0.35f))
             }
             val millis = System.currentTimeMillis()
             val hourFrac = ((millis % 3_600_000L).toFloat() / 3_600_000f)
             val ang = Math.toRadians((hourFrac * 360f - 90f).toDouble()).toFloat()
             val px = cx + rBezel * cos(ang); val py = cy + rBezel * sin(ang)
-            drawCircle(Color(0xFF2A6AFF), 4.6f, Offset(px, py))
-            drawCircle(Color.White.copy(alpha = 0.6f), 2.5f, Offset(px + 0.8f, py - 0.8f))
+            drawCircle(orangeLine, 4.6f, Offset(px, py))
+            drawCircle(Color.White.copy(alpha = 0.55f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // === 3) Lijeva SKALA — JOŠ SKUPLJA, DUBLJE UNUTRA, DEBLJE CRTICE i MARKER, % NA 6. CRTICI ===
+        // === 3) Lijeva SKALA — kompaktna, deblje crtice, marker narančast, % na 6. crtici ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -237,12 +251,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 val cosA = cos(ang); val sinA = sin(ang)
                 val p1 = Offset(cx + inner * cosA, cy + inner * sinA)
                 val p2 = Offset(cx + outer * cosA, cy + outer * sinA)
-                val col = if (i == 0) Color(0xFFB0BAC8) else Color(0x668BA0B8)
+                val col = if (i == 0) orangeLite else orangeDim
                 val sw = if (i == 0) 5.6f else 4.2f
                 drawLine(col, p1, p2, strokeWidth = sw, cap = StrokeCap.Round)
             }
 
-            // marker
+            // marker (narančasti gamut; overload treperi via markerAlpha)
             val markerSteps = steps
             val markerAng = start + (markerSteps + maxTicks) * stepAng
             val a = Math.toRadians(markerAng.toDouble()).toFloat()
@@ -251,9 +265,9 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val p1 = Offset(cx + mInner * cos(a), cy + mInner * sin(a))
             val p2 = Offset(cx + mOuter * cos(a), cy + mOuter * sin(a))
             val markerColor = when {
-                markerSteps > 0 -> Color(0xFF1F6C35)
-                markerSteps < 0 -> Color(0xFF7A231D)
-                else -> Color(0xFFB0BAC8)
+                markerSteps > 0 -> orangeLite
+                markerSteps < 0 -> orangeLine
+                else -> orangeDeep
             }
             drawLine(
                 markerColor.copy(alpha = markerAlpha),
@@ -262,12 +276,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 cap = StrokeCap.Round
             )
 
-            // natpis na zamišljenoj 6. crtici (−0.6%)
+            // natpis na zamišljenoj 6. crtici (−0.6%), poravnat po sredini crtice
             val showPct = if (overload) deltaHr else markerSteps * tick.toDouble()
             val txt = pctStr(showPct)
             val txtPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = (if (showPct >= 0) 0xFF1F6C35 else 0xFF7A231D).toInt()
+                color = 0xFFFF7A00.toInt()
                 textSize = 11.sp.toPx()
                 alpha = (markerAlpha * 255).toInt()
                 typeface = android.graphics.Typeface.create(
@@ -275,31 +289,33 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 )
             }
 
-            // računamo kut baš kao da crtamo crticu i = -6
-            val extraStep = -7
+            val extraStep = -7                       // tvoje trenutno poravnanje
             val txtAng = start + (extraStep + maxTicks) * stepAng
             val angRad = Math.toRadians(txtAng.toDouble()).toFloat()
 
-// ↓ POVLAČENJE UNUTRA: promijeniš samo ovu vrijednost
-            val rText = outer - 2f      // probaj -12f do -20f po ukusu
-            val lx = cx + rText * cos(angRad)
-            val ly = cy + rText * sin(angRad)
+            val rText = (inner + outer) / 2f        // CENTAR crtice (ne outer)
+            val cxT = cx + rText * cos(angRad)
+            val cyT = cy + rText * sin(angRad)
 
-// rotiraj natpis da prati kut crtice, bez zrcaljenja
-            drawIntoCanvas {
-                it.save()
-                it.rotate(txtAng +270f, lx, ly)         // +180f uklanja mirror
-                it.nativeCanvas.drawText(
+            val fm = txtPaint.fontMetrics
+            val baselineYOffset = - (fm.ascent + fm.descent) / 2f
+            val halfTextW = txtPaint.measureText(txt) / 2f
+
+            drawIntoCanvas { c ->
+                c.save()
+                c.translate(cxT, cyT)
+                c.rotate(txtAng + 270f) // +180f uklanja mirror
+                c.nativeCanvas.drawText(
                     txt,
-                    lx - txtPaint.measureText(txt) / 2f, // ispravno centriranje (prije je bilo /1f)
-                    ly - 1.5f,                           // sitan lift baselinea (po želji)
+                    -halfTextW,
+                    baselineYOffset,
                     txtPaint
                 )
-                it.restore()
+                c.restore()
             }
         }
 
-        // === 4) Foreground: SPOT + BUY/SELL brojke ===
+        // === 4) Foreground: SPOT + BUY/SELL brojke (vertikalno) ===
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -308,28 +324,27 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         ) {
             Spacer(Modifier.height(28.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Gold (EUR/oz)", fontSize = 14.sp, color = Color(0xFFD0D7E6))
+                Text("Gold (EUR/oz)", fontSize = 14.sp, color = warmWhite.copy(alpha = 0.85f))
                 Text(
                     euro(spotNow),
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF2F4FA)
+                    color = Color(0xFFF5F1EB)
                 )
             }
             Spacer(Modifier.height(36.dp))
 
-            // umjesto Row -> Column
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal =12.dp),
+                    .padding(horizontal = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp) // malo razmaka između BUY i SELL
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     euro(buy),
                     fontSize = 16.sp,
-                    color = Color(0xFFF2F4FA),
+                    color = Color(0xFFF5F1EB),
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
@@ -337,7 +352,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 Text(
                     euro(sell),
                     fontSize = 16.sp,
-                    color = Color(0xFFF2F4FA),
+                    color = Color(0xFFF5F1EB),
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
@@ -347,7 +362,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.weight(1f))
         }
 
-        // === 5) Requests po DNU — tekst po luku: "Requests 123/500" ===
+        // === 5) Requests po DNU — topla tipografija: "Requests 123/500" ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -357,7 +372,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val textSizePx = 11.sp.toPx()
             val p = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = android.graphics.Color.argb(220, 202, 212, 228) // #CAD4E4 ~ 0.86 alpha
+                color = android.graphics.Color.argb(230, 255, 210, 170) // toplo-bijeli ton
                 textSize = textSizePx
                 typeface = android.graphics.Typeface.create(
                     android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL
@@ -372,7 +387,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawIntoCanvas { it.nativeCanvas.drawTextOnPath(arcText, path, hOff, 0f, p) }
         }
 
-        // === 6) "MOKRI" EFEKT NA POTOPLJENOM TEKSTU ===
+        // === 6) "MOKRI" EFEKT NA POTOPLJENOM TEKSTU — narančasti overlay ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val levelY = h * waterLevel.toFloat() + (sin(t * 0.35f) * 0.0045f) * h
@@ -396,10 +411,10 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 moveTo(0f, crestY(0f)); lineTo(w, crestY(w)); lineTo(w, h); lineTo(0f, h); close()
             }
             clipPath(belowPath) {
-                drawRect(Color(0x3326B6FF), blendMode = BlendMode.Multiply)
+                drawRect(orangeLine.copy(alpha = 0.2f), blendMode = BlendMode.Multiply)
                 val stripeH = 6f
                 var y = levelY + 8f
-                val gloss = Color.White.copy(alpha = 0.06f)
+                val gloss = Color.White.copy(alpha = 0.05f)
                 while (y < h) {
                     drawRect(gloss, topLeft = Offset(0f, y), size = Size(w, 1.2f))
                     y += stripeH + 2f
