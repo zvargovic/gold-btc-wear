@@ -303,27 +303,47 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 10.dp),
+                .padding(horizontal = 36.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(28.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Gold (EUR/oz)", fontSize = 14.sp, color = Color(0xFFD0D7E6))
-                Text(euro(spotNow), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF2F4FA))
+                Text(
+                    euro(spotNow),
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFF2F4FA)
+                )
             }
-            Spacer(Modifier.height(12.dp))
-            Row(
+            Spacer(Modifier.height(36.dp))
+
+            // umjesto Row -> Column
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal =12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp) // malo razmaka između BUY i SELL
             ) {
-                Text(euro(buy),  fontSize = 16.sp, color = Color(0xFFF2F4FA),
-                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip)
-                Text(euro(sell), fontSize = 16.sp, color = Color(0xFFF2F4FA),
-                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip)
+                Text(
+                    euro(buy),
+                    fontSize = 16.sp,
+                    color = Color(0xFFF2F4FA),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+                Text(
+                    euro(sell),
+                    fontSize = 16.sp,
+                    color = Color(0xFFF2F4FA),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
             }
+
             Spacer(Modifier.weight(1f))
         }
 
