@@ -114,7 +114,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     // Aktivni servis (placeholder)
     var activeService by remember { mutableStateOf(PriceService.TwelveData) }
 
-    // Animirani cilj mjehurića libele po servisu (+5 = TwelveData, -5 = Yahoo)
+    // Animirani cilj mjehurića libele
     val bubbleStep by animateFloatAsState(
         targetValue = if (activeService == PriceService.TwelveData) 5f else -5f,
         animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
@@ -409,7 +409,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 4) Foreground: SPOT + BUY/SELL (BUY/SELL = WAVY) ===
+        // === 4) Foreground: SPOT + BUY/SELL (tekst prati val) ===
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -423,6 +423,10 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(36.dp))
 
+            // BOJE s green/red štihom (nema čisto narančaste)
+            val buyColor  = androidx.compose.ui.graphics.lerp(orangeLine, buyTint, 0.65f)
+            val sellColor = androidx.compose.ui.graphics.lerp(orangeLine, sellTint, 0.65f)
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -430,23 +434,21 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                WavyPrice(
+                FollowWaterText(
                     text = euro(buy),
-                    textColor = orangeLine,
-                    fontSizeSp = 16,
+                    color = buyColor,
+                    fontSizeSp = 18,
                     weight = FontWeight.SemiBold,
-                    amplitude = 1.dp,
-                    wavelengthPx = 800f,
-                    speed = 0.2f
+                    t = t,
+                    yOffset = (-8).dp     // BUY malo iznad
                 )
-                WavyPrice(
+                FollowWaterText(
                     text = euro(sell),
-                    textColor = orangeLine,
-                    fontSizeSp = 16,
+                    color = sellColor,
+                    fontSizeSp = 18,
                     weight = FontWeight.SemiBold,
-                    amplitude = 1.5.dp,
-                    wavelengthPx = 990f,
-                    speed = 0.15f
+                    t = t,
+                    yOffset = (-26).dp       // SELL malo ispod
                 )
             }
 
@@ -595,53 +597,53 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     }
 }
 
-/* ---------- WavyPrice: tekst koji “pliva” po sinusoidnom pathu ---------- */
+/* ---------- FollowWaterText: tekst koji prati ISTU kombinaciju valova + yOffset ---------- */
 @Composable
-fun WavyPrice(
+private fun FollowWaterText(
     text: String,
-    textColor: androidx.compose.ui.graphics.Color,   // jedini color parametar
+    color: Color,
     fontSizeSp: Int,
     weight: FontWeight,
-    amplitude: Dp = 6.dp,          // valna amplituda (Dp)
-    wavelengthPx: Float = 120f,    // širina vala u px
-    speed: Float = 0.8f,
+    t: Float,
+    yOffset: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val transition = rememberInfiniteTransition(label = "wave")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = (Math.PI * 2).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = (2000 / speed).roundToInt(),
-                easing = LinearEasing
-            )
-        ),
-        label = "phase"
-    )
-
     val density = LocalDensity.current
-
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height((fontSizeSp * 2).dp)
+            .height((fontSizeSp * 2.2f).dp)
     ) {
         val textSizePx = with(density) { fontSizeSp.sp.toPx() }
-        val A = with(density) { amplitude.toPx() }
         val w = size.width
         val h = size.height
-        val baseline = h * 0.55f
-        val k = (2f * Math.PI.toFloat()) / wavelengthPx
+
+        // baseline pomaknut za yOffset (neovisno za BUY/SELL)
+        val baseLine = h * 0.55f + with(density) { yOffset.toPx() }
+        val twoPi = (Math.PI * 2).toFloat()
+        val ampBase = 10f
+        val ampChop = 2.6f
+        val lenLong = w / 1.35f
+        val lenMid  = w / 0.95f
+        val lenShort = w / 0.36f
+        val phaseL = t * 0.45f
+        val phaseM = t * 0.9f + 1.1f
+        val phaseS = t * 1.6f + 0.6f
+
+        fun crestLocal(x: Float): Float =
+            baseLine +
+                    ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
+                    (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
+                    ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
 
         val p = android.graphics.Paint().apply {
             isAntiAlias = true
             style = android.graphics.Paint.Style.FILL
-            color = android.graphics.Color.argb(
-                (textColor.alpha * 255).roundToInt(),
-                (textColor.red * 255).roundToInt(),
-                (textColor.green * 255).roundToInt(),
-                (textColor.blue * 255).roundToInt()
+            this.color = android.graphics.Color.argb(
+                (color.alpha * 255).roundToInt(),
+                (color.red * 255).roundToInt(),
+                (color.green * 255).roundToInt(),
+                (color.blue * 255).roundToInt()
             )
             textSize = textSizePx
             typeface = android.graphics.Typeface.create(
@@ -653,13 +655,19 @@ fun WavyPrice(
             )
         }
 
+        // lagani “outline” za kontrast
+        val shadowPaint = android.graphics.Paint(p).apply {
+            this.color = android.graphics.Color.argb(120, 0, 0, 0)
+            strokeWidth = 3.5f
+            style = android.graphics.Paint.Style.STROKE
+        }
+
         val path = android.graphics.Path().apply {
-            moveTo(0f, baseline)
+            moveTo(0f, crestLocal(0f))
             var x = 0f
-            val step = 3.5f
+            val step = 4f
             while (x <= w) {
-                val y = (baseline + A * sin(k * x + phase))
-                lineTo(x, y)
+                lineTo(x, crestLocal(x))
                 x += step
             }
         }
@@ -669,7 +677,10 @@ fun WavyPrice(
         val textLen = p.measureText(text)
         val hOff = ((pathLen - textLen) / 2f).coerceAtLeast(0f)
 
-        drawIntoCanvas { it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, p) }
+        drawIntoCanvas {
+            it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, shadowPaint)
+            it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, p)
+        }
     }
 }
 
