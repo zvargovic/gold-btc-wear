@@ -435,18 +435,18 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     textColor = orangeLine,
                     fontSizeSp = 16,
                     weight = FontWeight.SemiBold,
-                    amplitude = 2.dp,
-                    wavelengthPx = 220f,
-                    speed = 0.8f
+                    amplitude = 1.dp,
+                    wavelengthPx = 800f,
+                    speed = 0.2f
                 )
                 WavyPrice(
                     text = euro(sell),
                     textColor = orangeLine,
                     fontSizeSp = 16,
                     weight = FontWeight.SemiBold,
-                    amplitude = 2.dp,
-                    wavelengthPx = 140f,
-                    speed = 0.8f
+                    amplitude = 1.5.dp,
+                    wavelengthPx = 990f,
+                    speed = 0.4f
                 )
             }
 
