@@ -446,7 +446,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     weight = FontWeight.SemiBold,
                     amplitude = 1.5.dp,
                     wavelengthPx = 990f,
-                    speed = 0.4f
+                    speed = 0.15f
                 )
             }
 
