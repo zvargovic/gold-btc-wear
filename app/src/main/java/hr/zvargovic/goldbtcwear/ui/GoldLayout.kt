@@ -61,11 +61,11 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
     // --- VODA: veži za sekunde unutar minute (glatko 0→1) ---
     val fracSec by produceState(initialValue = 0f) {
-        var last = 0L
+        var _last = 0L
         while (true) withFrameNanos { now ->
             val ms = System.currentTimeMillis() % 60_000L
             value = ms / 60_000f
-            last = now
+            _last = now
         }
     }
     // invertirano: kako vrijeme teče, razina vode raste (levelY ide prema vrhu)
@@ -183,7 +183,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     fun crestY(x: Float): Float =
                         levelY +
                                 ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
-                                (ampBase * 0.55f) * sin((x / lenMid) * twoPi + phaseM) * 0.35f +
+                                (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
                                 ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
 
                     // maska iznad vala
@@ -209,9 +209,11 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     )
 
                     val depthBrush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.35f to Color(0x33220000),
-                        1f to Color(0xAA110000)
+                        colorStops = arrayOf(
+                            0f to Color.Transparent,
+                            0.35f to Color(0x33220000),
+                            1f to Color(0xAA110000)
+                        )
                     )
                     drawRect(
                         brush = depthBrush,
@@ -228,7 +230,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     }
                     val feather = 28f
                     val featherBrush = Brush.verticalGradient(
-                        listOf(Color(0xCC000000), Color(0x33000000), orangeDim, Color.Transparent),
+                        colors = listOf(Color(0xCC000000), Color(0x33000000), orangeDim, Color.Transparent),
                         startY = levelY - feather, endY = levelY + feather
                     )
                     drawPath(crestPath, featherBrush, style = Stroke(width = feather, cap = StrokeCap.Butt))
@@ -428,7 +430,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 4) Foreground: SVE CIJENE I NASLOV — svaki element ima svoj trigger ===
+        // === 4) Foreground: SVE CIJENE I NASLOV — realistični prijelazi ===
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -454,7 +456,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     activeOverride = if (yWaterPx <= 95f) 1f else 0f
                 )
 
-                // Spot  → blur (bez wave) kad je yWater ≤ 150 px (fiksan Y)
+                // Spot  → samo blur kad je yWater ≤ 150 px (fiksan Y)
                 FollowWaterText(
                     id = "spot",
                     text = euro(spotNow),
@@ -658,9 +660,11 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 }
 
 /* ---------- FollowWaterText ----------
- * Svaki element ima vlastiti trigger:
- * - Kad je potopljen (prema vlastitoj širini teksta): wave + blur + blago zatamnjenje
- * - Kad NIJE: ravno, bez blur-a, bez promjene pozicije
+ * Realističan “mokri” prijelaz po elementu:
+ * - Goal (0/1) dolazi kroz activeOverride (pragovi po px) ili iz lokalne potopljenosti
+ * - EMA smoothing s vremenskom konstantom + ograničenje brzine po sekundi
+ * - Fazno paljenje: blur od ranije, wave kasnije
+ * - Crossfade baseline ↔ wave (bez skoka)
  */
 @Composable
 private fun FollowWaterText(
@@ -675,17 +679,25 @@ private fun FollowWaterText(
     blurStrengthDp: Dp = 0.dp,
     modifier: Modifier = Modifier,
     followWave: Boolean = true,         // default “plivaj”
-    activeOverride: Float? = null       // px-based override
+    activeOverride: Float? = null       // px-based override (0..1)
 ) {
     val density = LocalDensity.current
-    var latched by remember(id) { mutableStateOf(false) }  // histereza latch
-    var smooth  by remember(id) { mutableStateOf(0f) }     // low-pass 0..1
+
+    // Stanja za glatki prijelaz
+    var wet by remember(id) { mutableStateOf(0f) }      // 0=dry, 1=wet
+    var prevT by remember(id) { mutableStateOf(t) }     // za dt
+    var latched by remember(id) { mutableStateOf(false) }  // fallback lokalna histereza
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height((fontSizeSp * 2.2f).dp)
     ) {
+        fun smoothstep(e0: Float, e1: Float, x: Float): Float {
+            val tt = ((x - e0) / (e1 - e0)).coerceIn(0f, 1f)
+            return tt * tt * (3f - 2f * tt)
+        }
+
         val textSizePx = with(density) { fontSizeSp.sp.toPx() }
         val w = size.width
         val h = size.height
@@ -722,7 +734,7 @@ private fun FollowWaterText(
                     (wAmpBase * 0.55f) * sin((x / wLenMid) * twoPi + phaseM) * 0.35f +
                     wAmpChop * sin((x / wLenShort) * twoPi + phaseS) * 0.5f
 
-        // 1) Izmjeri širinu teksta
+        // 1) Širina teksta
         val measurePaint = android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = textSizePx
@@ -740,7 +752,7 @@ private fun FollowWaterText(
         val left = max(0f, cx - textW / 2f - padPx)
         val right = min(w, cx + textW / 2f + padPx)
 
-        // 2) Uzorkuj potopljenost samo preko širine teksta
+        // 2) Lokalna potopljenost (fallback kad nema override)
         val samples = 25
         var belowCnt = 0
         val submMarginPx = with(density) { 2.dp.toPx() }
@@ -749,23 +761,41 @@ private fun FollowWaterText(
             if (crestLocal(x) > crestWater(x) + submMarginPx) belowCnt++
         }
         val frac = belowCnt / samples.toFloat()
-
-        // 3) Histereza + smoothing
         latched = when {
             frac >= 0.30f -> true
             frac <= 0.15f -> false
             else -> latched
         }
-        val target = if (latched) 1f else 0f
-        val k = 0.22f
-        smooth += (target - smooth) * k
 
-        // Override ima prednost
-        val active = (activeOverride ?: smooth).coerceIn(0f, 1f)
-        val latchedNow = active >= 0.6f
+        // 3) EMA + rate limit prema cilju (override ili lokalno)
+        val goal = (activeOverride ?: if (latched) 1f else 0f).coerceIn(0f, 1f)
+        val dt = (t - prevT).coerceIn(0f, 0.1f) // s
+        prevT = t
 
-        // 4) Paintovi
-        val p = android.graphics.Paint().apply {
+        // vremenska konstanta (sek) — koliko brzo “natapa”
+        val tauIn = 0.35f
+        val tauOut = 0.45f
+        val tau = if (goal > wet) tauIn else tauOut
+        val k = (1f - exp(-dt / max(1e-4f, tau))).coerceIn(0f, 1f)
+
+        var newWet = wet + (goal - wet) * k
+
+        // ograničenje brzine promjene (per-second rate limit)
+        val rateIn = 1.2f   // brže moči
+        val rateOut = 0.8f  // malo sporije suši
+        val maxRate = if (goal > wet) rateIn else rateOut
+        val maxDelta = maxRate * dt
+        val delta = (newWet - wet).coerceIn(-maxDelta, maxDelta)
+        newWet = wet + delta
+        wet = newWet.coerceIn(0f, 1f)
+
+        // 4) Fazno paljenje efekata
+        val blurPhase = smoothstep(0.15f, 0.55f, wet)             // blur se pali ranije
+        val wavePhase = if (followWave) smoothstep(0.45f, 0.95f, wet) else 0f // val kasnije
+        val darkPhase = smoothstep(0.30f, 1.00f, wet)             // blago zatamnjenje
+
+        // 5) Paintovi (dinamički blur + dim)
+        val basePaint = android.graphics.Paint().apply {
             isAntiAlias = true
             style = android.graphics.Paint.Style.FILL
             color = android.graphics.Color.argb(
@@ -776,27 +806,50 @@ private fun FollowWaterText(
             )
             textSize = textSizePx
             typeface = measurePaint.typeface
+        }
+        val dim = 1f - 0.12f * darkPhase
+        val blurMaxPx = with(density) { blurStrengthDp.toPx() }
+        val blurPx = blurMaxPx * blurPhase
 
-            val dim = 1f - 0.12f * active
-            alpha = (alpha * dim).toInt().coerceIn(0, 255)
-
-            val blurPx = with(density) { blurStrengthDp.toPx() } * active
-            maskFilter = if (blurPx > 0.5f) BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL) else null
+        fun makePaint(from: android.graphics.Paint, alphaMul: Float, blur: Float): android.graphics.Paint {
+            return android.graphics.Paint(from).apply {
+                alpha = (alpha * alphaMul).toInt().coerceIn(0, 255)
+                maskFilter = if (blur > 0.5f) BlurMaskFilter(blur, BlurMaskFilter.Blur.NORMAL) else null
+            }
         }
 
-        val shadowPaint = android.graphics.Paint(p).apply {
+        // ukupna “osnovna” alfa nakon zatamnjenja
+        val baseAlphaMul = dim
+
+        // baseline (ravni tekst) i wave (na putanji) – crossfade
+        val baselineAlpha = (1f - wavePhase) * baseAlphaMul
+        val waveAlpha = wavePhase * baseAlphaMul
+
+        val pBaseline = makePaint(basePaint, baselineAlpha, blurPx)
+        val pWave     = makePaint(basePaint, waveAlpha, blurPx)
+
+        val shadowBase = android.graphics.Paint(basePaint).apply {
             style = android.graphics.Paint.Style.STROKE
             strokeWidth = 3.5f
-            color = android.graphics.Color.argb(if (latchedNow) 80 else 120, 0, 0, 0)
-            val sBlur = with(density) { (blurStrengthDp * 0.7f).toPx() } * active
-            maskFilter = if (sBlur > 0.5f) BlurMaskFilter(sBlur, BlurMaskFilter.Blur.NORMAL) else null
+            color = android.graphics.Color.argb(if (wet > 0.5f) 80 else 120, 0, 0, 0)
         }
+        val sBaseline = makePaint(shadowBase, baselineAlpha, blurPx * 0.7f)
+        val sWave     = makePaint(shadowBase, waveAlpha, blurPx * 0.7f)
 
-        // 5) Crtanje: wave kad je aktivno i dopušteno; inače ravno
-        val fm = p.fontMetrics
+        // 6) Crtanje: baseline ↔ wave crossfade (bez skoka)
+        val fm = basePaint.fontMetrics
         val baselineYOffset = -(fm.ascent + fm.descent) / 2f
 
-        if (active > 0.6f && followWave) {
+        // baseline (ravno)
+        if (baselineAlpha > 0.01f) {
+            drawIntoCanvas {
+                it.nativeCanvas.drawText(text, cx - textW / 2f, baseLine + baselineYOffset, sBaseline)
+                it.nativeCanvas.drawText(text, cx - textW / 2f, baseLine + baselineYOffset, pBaseline)
+            }
+        }
+
+        // wave (na putanji)
+        if (waveAlpha > 0.01f && followWave) {
             val path = android.graphics.Path().apply {
                 moveTo(0f, crestLocal(0f))
                 var x = 0f
@@ -810,13 +863,8 @@ private fun FollowWaterText(
             val pathLen = pm.length
             val hOff = ((pathLen - textW) / 2f).coerceAtLeast(0f)
             drawIntoCanvas {
-                it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, shadowPaint)
-                it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, p)
-            }
-        } else {
-            drawIntoCanvas {
-                it.nativeCanvas.drawText(text, cx - textW / 2f, baseLine + baselineYOffset, shadowPaint)
-                it.nativeCanvas.drawText(text, cx - textW / 2f, baseLine + baselineYOffset, p)
+                it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, sWave)
+                it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, pWave)
             }
         }
     }
