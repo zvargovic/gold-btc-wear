@@ -44,7 +44,8 @@ import androidx.core.content.ContextCompat
 import hr.zvargovic.goldbtcwear.R
 
 enum class PriceService { TwelveData, Yahoo }
-
+private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
+    start + (stop - start) * fraction
 @Composable
 fun GoldStaticScreen(modifier: Modifier = Modifier) {
     // --- Demo vrijednosti ---
@@ -59,17 +60,124 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     val usedRequests = 123
     val maxRequests  = 500
 
-    // --- VODA: veži za sekunde unutar minute (glatko 0→1) ---
-    val fracSec by produceState(initialValue = 0f) {
-        var _last = 0L
-        while (true) withFrameNanos { now ->
-            val ms = System.currentTimeMillis() % 60_000L
+    // === CLOCK ===
+    // Frakcija sekunde u minuti (0..1). Koristit ćemo je samo kao "drive".
+    val fracRaw by produceState(initialValue = 0f) {
+        while (true) withFrameNanos {
+            val ms = (System.currentTimeMillis() % 60_000L).toFloat()
             value = ms / 60_000f
-            _last = now
         }
     }
-    // invertirano: kako vrijeme teče, razina vode raste (levelY ide prema vrhu)
-    val waterLevel = 0.90f - (0.90f - 0.15f) * fracSec
+    // Cosine-wrap (nema skoka na 1→0): 0..1 → 0..1 glatko i periodično
+    // 0.5 - 0.5*cos(2πx) je kontinuirano i derivacija je nula na krajevima.
+    val fracSmooth = 0.5f - 0.5f * cos((2f * Math.PI).toFloat() * fracRaw)
+
+    // === “FIZIKA” VODE (u PX) ===
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenH = with(density) { configuration.screenHeightDp.dp.toPx() }
+
+    // Linearni target (kao prije) – ali vozit ćemo ga kroz naš simulator.
+    // Mapa: visoko (pun ekran) ≈ 0.15H … nisko ≈ 0.90H (isti raspon kao prije)
+    val waterTop = 0.15f * screenH
+    val waterBot = 0.90f * screenH
+    val linTargetPx = lerpF(waterBot, waterTop, fracSmooth)
+    // Sitni “wiggle” koji si koristio svugdje:
+    // koristimo globalno vrijeme tAnim (u sekundama) za fazu valova i wiggle.
+    var tAnim by remember { mutableStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) withFrameNanos { now ->
+            if (last == 0L) last = now
+            val dt = (now - last) / 1_000_000_000f
+            last = now
+            tAnim += dt * 0.30f
+        }
+    }
+    val wigglePx = (sin(tAnim * 0.35f) * 0.0045f) * screenH
+    val goalPxRaw = linTargetPx + wigglePx
+
+    // --- State za simulaciju: plateau & release + EMA s ograničenjem pada ---
+    var yPx by remember { mutableStateOf(goalPxRaw) }
+    var prevGoal by remember { mutableStateOf(goalPxRaw) }
+    var prevTime by remember { mutableStateOf(tAnim) }
+
+    // Plateau timer: koliko još “odmaramo” pri vrhu (sekunde).
+    var plateauLeft by remember { mutableStateOf(0f) }
+    val plateauDuration = 0.9f       // ~0.9 s odmora kad dotaknemo vrh
+
+    // Release stanje: nježan “odlijep” nakon wrapa (velikog skoka targeta prema dolje).
+    var releaseLeft by remember { mutableStateOf(0f) }
+    val releaseDuration = 0.85f      // trajanje kontroliranog opadanja
+
+    // Parametri EMA + rate limit
+    val tauUp = 0.28f        // koliko brzo se penje prema cilju (manje = brže)
+    val tauDown = 0.50f      // spuštanje sporije
+    val maxDropPerSec = 420f // px/s (ograniči nagli pad)
+    // Prag za detekciju wrap skoka (koliko je target pao frame-to-frame)
+    val wrapJumpThreshPx = screenH * 0.55f
+
+    // Glavna simulacija vode – radi u Composition.
+    run {
+        val dt = (tAnim - prevTime).coerceAtLeast(0f)
+        prevTime = tAnim
+
+        // Detekcija wrapa: target je naglo skočio prema dnu (veći y)
+        val goalNow = goalPxRaw
+        val goalDelta = goalNow - prevGoal
+        prevGoal = goalNow
+
+        if (goalDelta > wrapJumpThreshPx) {
+            // Kreni RELEASE i malo “odmori” pri vrhu
+            plateauLeft = plateauDuration
+            releaseLeft = releaseDuration
+        }
+
+        // Ako smo vrlo blizu vrha (fizički), održavaj plateau
+        val nearTop = goalNow <= waterTop + 8f
+        if (nearTop) plateauLeft = max(plateauLeft, 0.15f) // uvijek barem kratko stane
+
+        // Ako je plateau aktivan – ne spuštaj cilj (drži trenutni y)
+        val effectiveGoal = if (plateauLeft > 0f) min(yPx, goalNow) else goalNow
+
+        // EMA prema effectiveGoal (asimetrična)
+        val tau = if (effectiveGoal < yPx) tauUp else tauDown
+        val k = (1f - exp(-dt / max(1e-4f, tau))).coerceIn(0f, 1f)
+        var yProposed = yPx + (effectiveGoal - yPx) * k
+
+        // Ako smo u RELEASE, dodatno omekšaj pad (OutCubic) i limitiraj brzinu
+        if (releaseLeft > 0f && yProposed > yPx) {
+            val x = (1f - (releaseLeft / releaseDuration)).coerceIn(0f, 1f)
+            val outCubic = 1f - (1f - x).pow(3) // 0→1
+            val relK = 0.25f + 0.75f * outCubic // raste od 0.25 do 1.0
+            yProposed = yPx + (yProposed - yPx) * relK
+        }
+
+        // Max brzina pada (bez obzira na release)
+        val maxDown = maxDropPerSec * dt
+        if (yProposed - yPx > maxDown) yProposed = yPx + maxDown
+
+        // Ažuriraj y i timere
+        yPx = yProposed
+        plateauLeft = (plateauLeft - dt).coerceAtLeast(0f)
+        releaseLeft = (releaseLeft - dt).coerceAtLeast(0f)
+    }
+
+    // Faktor za pojačanje/stišavanje valova:
+    // - Blizu vrha (y→0) stišaj (0.65..1)
+    // - Tijekom release-a dodatno stišaj.
+    val headroom = (yPx / screenH).coerceIn(0f, 1f) // 0 = vrh
+    val nearTopMul = 0.65f + 0.35f * headroom       // 0.65..1.0
+    val releaseMul = if (releaseLeft > 0f) 0.85f else 1f
+    val waveAmpMul = nearTopMul * releaseMul
+
+    // Ovo koristimo svugdje za crtanje (mapirano na lokalni canvas)…
+    val yWaterPxForDrawing = yPx
+    // …a ovo za triggere – isti wiggle & smoothing, dakle isto.
+    val yWaterPxForTriggers = yPx
+
+    // Za FollowWaterText trebamo frakciju (0..1) – konverzija iz px na lokalnu visinu.
+    fun waterLevelRatio(): Float = (yWaterPxForDrawing / screenH).coerceIn(0f, 1f)
 
     // --- Ostalo (tickovi, overload) ---
     val deltaHr = if (lastRequestPrice > 0) (spotNow - lastRequestPrice) / lastRequestPrice else 0.0
@@ -84,18 +192,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         return "$sign${String.format(Locale.US, "%.1f", p * 100)}%"
     }
     fun euro(amount: Double): String = "€" + String.format(Locale.US, "%,.2f", amount)
-
-    // anim clock (valovi)
-    var t by remember { mutableStateOf(0f) }
-    LaunchedEffect(Unit) {
-        var last = 0L
-        while (true) withFrameNanos { now ->
-            if (last == 0L) last = now
-            val dt = (now - last) / 1_000_000_000f
-            last = now
-            t += dt * 0.30f
-        }
-    }
 
     // Blink za overload
     val infiniteTransition = rememberInfiniteTransition(label = "blink")
@@ -135,12 +231,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     val iconTop = remember { ImageBitmap.imageResource(res, R.drawable.ic_twelve) }   // vrh luka
     val iconBottom = remember { ImageBitmap.imageResource(res, R.drawable.ic_yahoo) } // dno luka
 
-    // --- Apsolutna razina vode u pikselima (0 = vrh ekrana) ---
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-    val yWaterPx = screenHeightPx * waterLevel + (sin(t * 0.35f) * 0.0045f) * screenHeightPx
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -148,7 +238,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     ) {
         // Debug overlay (gore desno)
         Text(
-            text = "yWater = %.1f px (lvl=%.3f)".format(yWaterPx, waterLevel),
+            text = "yWater=%.1f  plateau=%.2f  release=%.2f".format(yWaterPxForDrawing, plateauLeft, releaseLeft),
             color = Color.Cyan,
             fontSize = 11.sp,
             modifier = Modifier
@@ -167,23 +257,23 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     val w = size.width
                     val h = size.height
 
-                    val levelY = h * waterLevel + (sin(t * 0.35f) * 0.0045f) * h
+                    val levelY = (yWaterPxForDrawing / screenH) * h
 
-                    // valovi
-                    val ampBase = 18f
-                    val ampChop = 4.0f
+                    // valovi (amplitude skalirane s waveAmpMul)
+                    val ampBase = 18f * waveAmpMul
+                    val ampChop = 4.0f * waveAmpMul
                     val lenLong = w / 1.35f
                     val lenMid  = w / 0.95f
                     val lenShort = w / 0.36f
-                    val phaseL = t * 0.45f
-                    val phaseM = t * 0.9f + 1.1f
-                    val phaseS = t * 1.6f + 0.6f
+                    val phaseL = tAnim * 0.45f
+                    val phaseM = tAnim * 0.9f + 1.1f
+                    val phaseS = tAnim * 1.6f + 0.6f
                     val twoPi = (Math.PI * 2).toFloat()
 
                     fun crestY(x: Float): Float =
                         levelY +
                                 ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
-                                (ampBase * 0.55f) * sin((x / lenMid)  * twoPi + phaseM) * 0.35f +
+                                (ampBase * 0.55f) * sin((x / lenMid) * twoPi + phaseM) * 0.35f +
                                 ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
 
                     // maska iznad vala
@@ -251,20 +341,20 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        // === 1b) Suptilni mjehurići ===
+        // === 1b) Suptilni mjehurići (koristi isti levelY + waveAmpMul) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val levelY = h * waterLevel + (sin(t * 0.35f) * 0.0045f) * h
+            val levelY = (yWaterPxForDrawing / screenH) * h
 
-            val ampBase = 18f
-            val ampChop = 4.0f
+            val ampBase = 18f * waveAmpMul
+            val ampChop = 4.0f * waveAmpMul
             val lenLong = w / 1.35f
             val lenMid  = w / 0.95f
             val lenShort = w / 0.36f
-            val phaseL = t * 0.45f
-            val phaseM = t * 0.9f + 1.1f
-            val phaseS = t * 1.6f + 0.6f
+            val phaseL = tAnim * 0.45f
+            val phaseM = tAnim * 0.9f + 1.1f
+            val phaseS = tAnim * 1.6f + 0.6f
             val twoPi = (Math.PI * 2).toFloat()
 
             fun crestY(x: Float): Float =
@@ -277,7 +367,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val riseMin = 22f
             val riseMax = 46f
             val life = 2.8f
-            val tNorm = (t / life)
+            val tNorm = (tAnim / life)
 
             fun hash01(i: Int): Float {
                 val x = ((i * 1664525) xor (i shl 13)) * 1013904223
@@ -303,7 +393,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     val baseR = flerp(minR, maxR, seed)
                     val r = (baseR * (0.85f + 0.35f * e)).coerceAtMost(maxR)
                     val a = (0.18f * (1f - frac)) * 0.85f
-                    val sway = (sin((t + seed * 7f) * 0.9f) * 2.0f)
+                    val sway = (sin((tAnim + seed * 7f) * 0.9f) * 2.0f)
 
                     drawCircle(Color.White.copy(alpha = a * 0.75f), r, Offset(x + sway, y))
                     drawCircle(Color.White.copy(alpha = a), r * 0.55f, Offset(x + sway + r * 0.35f, y - r * 0.35f))
@@ -328,7 +418,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 2) Minutni krug ===
+        // === 2) Minutni krug (ne diramo) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -354,7 +444,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawCircle(Color.White.copy(alpha = 0.8f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // === 3) Lijeva SKALA — kompaktna ===
+        // === 3) Lijeva SKALA (ne diramo) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -430,7 +520,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 4) Foreground: SVE CIJENE I NASLOV — realistični prijelazi ===
+        // === 4) Foreground: SVE CIJENE I NASLOV — realistični prijelazi (pragovi u PX) ===
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -448,12 +538,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     txtColor = orangeLine,
                     fontSizeSp = 14,
                     weight = FontWeight.Normal,
-                    t = t,
-                    waterLevel = waterLevel,
+                    t = tAnim,
+                    waterLevel = waterLevelRatio(),
                     yOffset = 0.dp,
                     blurStrengthDp = 1.5.dp,
                     followWave = true,
-                    activeOverride = if (yWaterPx <= 95f) 1f else 0f
+                    activeOverride = if (yWaterPxForTriggers <= 95f) 1f else 0f
                 )
 
                 // Spot  → samo blur kad je yWater ≤ 150 px (fiksan Y)
@@ -463,12 +553,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     txtColor = orangeLine,
                     fontSizeSp = 30,
                     weight = FontWeight.Bold,
-                    t = t,
-                    waterLevel = waterLevel,
+                    t = tAnim,
+                    waterLevel = waterLevelRatio(),
                     yOffset = (-20).dp,
                     blurStrengthDp = 2.dp,
                     followWave = false,
-                    activeOverride = if (yWaterPx <= 150f) 1f else 0f
+                    activeOverride = if (yWaterPxForTriggers <= 150f) 1f else 0f
                 )
             }
 
@@ -489,12 +579,12 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     txtColor = androidx.compose.ui.graphics.lerp(orangeLine, buyTint, 0.65f),
                     fontSizeSp = 18,
                     weight = FontWeight.SemiBold,
-                    t = t,
-                    waterLevel = waterLevel,
+                    t = tAnim,
+                    waterLevel = waterLevelRatio(),
                     yOffset = (-42).dp,
                     blurStrengthDp = 2.dp,
                     followWave = true,
-                    activeOverride = if (yWaterPx <= 265f) 1f else 0f
+                    activeOverride = if (yWaterPxForTriggers <= 265f) 1f else 0f
                 )
 
                 // Sell → blur + wave kad je yWater ≤ 300 px
@@ -504,19 +594,19 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     txtColor = androidx.compose.ui.graphics.lerp(orangeLine, sellTint, 0.65f),
                     fontSizeSp = 18,
                     weight = FontWeight.SemiBold,
-                    t = t,
-                    waterLevel = waterLevel,
+                    t = tAnim,
+                    waterLevel = waterLevelRatio(),
                     yOffset = (-42).dp,
                     blurStrengthDp = 2.dp,
                     followWave = true,
-                    activeOverride = if (yWaterPx <= 300f) 1f else 0f
+                    activeOverride = if (yWaterPxForTriggers <= 300f) 1f else 0f
                 )
             }
 
             Spacer(Modifier.weight(1f))
         }
 
-        // === 5) Requests po dnu ===
+        // === 5) Requests po dnu (ne diramo) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -542,20 +632,20 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawIntoCanvas { it.nativeCanvas.drawTextOnPath(arcText, path, hOff, 0f, p) }
         }
 
-        // === 6) “MOKRI” overlay pod vodom ===
+        // === 6) “MOKRI” overlay pod vodom (ne diramo logiku, samo level) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
-            val levelY = h * waterLevel + (sin(t * 0.35f) * 0.0045f) * h
+            val levelY = (yWaterPxForDrawing / screenH) * h
 
             fun crestY(x: Float): Float {
-                val ampBase = 18f
-                val ampChop = 4.0f
+                val ampBase = 18f * waveAmpMul
+                val ampChop = 4.0f * waveAmpMul
                 val lenLong = w / 1.35f
                 val lenMid  = w / 0.95f
                 val lenShort = w / 0.36f
-                val phaseL = t * 0.45f
-                val phaseM = t * 0.9f + 1.1f
-                val phaseS = t * 1.6f + 0.6f
+                val phaseL = tAnim * 0.45f
+                val phaseM = tAnim * 0.9f + 1.1f
+                val phaseS = tAnim * 1.6f + 0.6f
                 val twoPi = (Math.PI * 2).toFloat()
                 return levelY +
                         ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
@@ -578,7 +668,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 7) LIBELA — desna, 2× deblja, ikone + clamp ===
+        // === 7) LIBELA — desna (ne diramo) ===
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -683,10 +773,9 @@ private fun FollowWaterText(
 ) {
     val density = LocalDensity.current
 
-    // Stanja za glatki prijelaz
     var wet by remember(id) { mutableStateOf(0f) }      // 0=dry, 1=wet
-    var prevT by remember(id) { mutableStateOf(t) }     // za dt
-    var latched by remember(id) { mutableStateOf(false) }  // fallback lokalna histereza
+    var prevT by remember(id) { mutableStateOf(t) }
+    var latched by remember(id) { mutableStateOf(false) }
 
     Canvas(
         modifier = modifier
@@ -734,7 +823,7 @@ private fun FollowWaterText(
                     (wAmpBase * 0.55f) * sin((x / wLenMid) * twoPi + phaseM) * 0.35f +
                     wAmpChop * sin((x / wLenShort) * twoPi + phaseS) * 0.5f
 
-        // 1) Širina teksta
+        // 1) Izmjeri širinu teksta
         val measurePaint = android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = textSizePx
@@ -772,7 +861,6 @@ private fun FollowWaterText(
         val dt = (t - prevT).coerceIn(0f, 0.1f) // s
         prevT = t
 
-        // vremenska konstanta (sek) — koliko brzo “natapa”
         val tauIn = 0.35f
         val tauOut = 0.45f
         val tau = if (goal > wet) tauIn else tauOut
@@ -781,8 +869,8 @@ private fun FollowWaterText(
         var newWet = wet + (goal - wet) * k
 
         // ograničenje brzine promjene (per-second rate limit)
-        val rateIn = 1.2f   // brže moči
-        val rateOut = 0.8f  // malo sporije suši
+        val rateIn = 1.2f
+        val rateOut = 0.8f
         val maxRate = if (goal > wet) rateIn else rateOut
         val maxDelta = maxRate * dt
         val delta = (newWet - wet).coerceIn(-maxDelta, maxDelta)
@@ -790,9 +878,9 @@ private fun FollowWaterText(
         wet = newWet.coerceIn(0f, 1f)
 
         // 4) Fazno paljenje efekata
-        val blurPhase = smoothstep(0.15f, 0.55f, wet)             // blur se pali ranije
-        val wavePhase = if (followWave) smoothstep(0.45f, 0.95f, wet) else 0f // val kasnije
-        val darkPhase = smoothstep(0.30f, 1.00f, wet)             // blago zatamnjenje
+        val blurPhase = smoothstep(0.15f, 0.55f, wet)
+        val wavePhase = if (followWave) smoothstep(0.45f, 0.95f, wet) else 0f
+        val darkPhase = smoothstep(0.30f, 1.00f, wet)
 
         // 5) Paintovi (dinamički blur + dim)
         val basePaint = android.graphics.Paint().apply {
@@ -818,12 +906,9 @@ private fun FollowWaterText(
             }
         }
 
-        // ukupna “osnovna” alfa nakon zatamnjenja
-        val baseAlphaMul = dim
-
-        // baseline (ravni tekst) i wave (na putanji) – crossfade
-        val baselineAlpha = (1f - wavePhase) * baseAlphaMul
-        val waveAlpha = wavePhase * baseAlphaMul
+        // baseline (ravni) vs wave (putanja) crossfade
+        val baselineAlpha = (1f - wavePhase) * dim
+        val waveAlpha = wavePhase * dim
 
         val pBaseline = makePaint(basePaint, baselineAlpha, blurPx)
         val pWave     = makePaint(basePaint, waveAlpha, blurPx)
@@ -836,11 +921,11 @@ private fun FollowWaterText(
         val sBaseline = makePaint(shadowBase, baselineAlpha, blurPx * 0.7f)
         val sWave     = makePaint(shadowBase, waveAlpha, blurPx * 0.7f)
 
-        // 6) Crtanje: baseline ↔ wave crossfade (bez skoka)
+        // 6) Crtanje
         val fm = basePaint.fontMetrics
         val baselineYOffset = -(fm.ascent + fm.descent) / 2f
 
-        // baseline (ravno)
+        // baseline
         if (baselineAlpha > 0.01f) {
             drawIntoCanvas {
                 it.nativeCanvas.drawText(text, cx - textW / 2f, baseLine + baselineYOffset, sBaseline)
@@ -848,7 +933,7 @@ private fun FollowWaterText(
             }
         }
 
-        // wave (na putanji)
+        // wave
         if (waveAlpha > 0.01f && followWave) {
             val path = android.graphics.Path().apply {
                 moveTo(0f, crestLocal(0f))
