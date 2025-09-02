@@ -30,13 +30,11 @@ import kotlin.math.*
 import java.util.Locale
 import androidx.compose.runtime.withFrameNanos
 
-// Android text-on-path & blur
 import android.graphics.BlurMaskFilter
 import android.graphics.Path as AndroidPath
 import android.graphics.RectF
 import android.graphics.PathMeasure
 
-// Animated WebP (bez Coil-a)
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.ImageView
 import android.graphics.drawable.AnimatedImageDrawable
@@ -49,7 +47,6 @@ private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
 
 @Composable
 fun GoldStaticScreen(modifier: Modifier = Modifier) {
-    // --- Demo vrijednosti ---
     val spotNow = 2315.40
     val premiumPct = 0.0049
     val buy = spotNow * (1 + premiumPct)
@@ -57,24 +54,14 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
     val lastRequestPrice = 2312.0
 
-    // === ALERT postavke ===
-    // mijenjaj ovu vrijednost za testiranje; stavi null da nema alerta
     var alertPrice by remember { mutableStateOf<Double?>(2300.50) }
-    // koliko je "prozor blizine" u EUR (što manje -> brže puni/prazni)
     val alertWindowEur = 30.0
-    // tolerancija pogotka alerta (EUR)
     val alertHitToleranceEur = 0.10
 
-    // zapamtimo na kojoj je strani bio alert u trenutku postavljanja
     var alertAnchorSpot by remember { mutableStateOf<Double?>(null) }
     LaunchedEffect(alertPrice) {
-        if (alertPrice != null) {
-            alertAnchorSpot = spotNow
-        } else {
-            alertAnchorSpot = null
-        }
+        alertAnchorSpot = if (alertPrice != null) spotNow else null
     }
-    // poništi alert kad je pogođen / prijeđen
     LaunchedEffect(spotNow, alertPrice, alertAnchorSpot) {
         val ap = alertPrice ?: return@LaunchedEffect
         val anchor = alertAnchorSpot
@@ -87,7 +74,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         if (crossed) alertPrice = null
     }
 
-    // === “FIZIKA” VODE (u PX) ===
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val screenH = with(density) { configuration.screenHeightDp.dp.toPx() }
@@ -95,7 +81,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     val waterTop = 0.15f * screenH
     val waterBot = 0.90f * screenH
 
-    // vrijeme za valove/mjehuriće (ne pokreće razinu vode)
     var tAnim by remember { mutableStateOf(0f) }
     LaunchedEffect(Unit) {
         var last = 0L
@@ -107,18 +92,13 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // ---- Target razine vode iz ALERT-a (0..1) ----
-    // voda ovisi o BLIZINI alerta: bliže = više vode, simetrično za iznad/ispod
     val fill01: Float = alertPrice?.let { ap ->
         val dist = kotlin.math.abs(ap - spotNow)
         val f = 1.0 - (dist / alertWindowEur).coerceIn(0.0, 1.0)
         f.toFloat()
     } ?: 0f
-
-    // cilj u px iz fill01
     val goalPxRaw = lerpF(waterBot, waterTop, fill01)
 
-    // --- State za simulaciju: plateau & release + EMA s ograničenjem pada ---
     var yPx by remember { mutableStateOf(goalPxRaw) }
     var prevGoal by remember { mutableStateOf(goalPxRaw) }
     var prevTime by remember { mutableStateOf(tAnim) }
@@ -181,7 +161,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
     fun waterLevelRatio(): Float = (yWaterPxForDrawing / screenH).coerceIn(0f, 1f)
 
-    // --- Ostalo (tickovi, overload) ---
     val deltaHr = if (lastRequestPrice > 0) (spotNow - lastRequestPrice) / lastRequestPrice else 0.0
     val tick = 0.001
     val maxTicks = 5
@@ -195,7 +174,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     }
     fun euro(amount: Double): String = "€" + String.format(Locale.US, "%,.2f", amount)
 
-    // Blink za overload
     val infiniteTransition = rememberInfiniteTransition(label = "blink")
     val blinkAlpha by infiniteTransition.animateFloat(
         initialValue = 0.25f,
@@ -208,31 +186,26 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     )
     val markerAlpha = if (overload) blinkAlpha else 1f
 
-    // --- Orange theme boje ---
     val orangeDim   = Color(0x66FF7A00)
     val orangeLine  = Color(0xFFFF7A00)
     val orangeLite  = Color(0xFFFFA040)
     val warmWhite   = Color(0xFFDCD3C8)
 
-    // BUY/SELL + marker
     val buyTint  = Color(0xFF2FBF6B)
     val sellTint = Color(0xFFE0524D)
 
-    // Aktivni servis (placeholder)
     var activeService by remember { mutableStateOf(PriceService.TwelveData) }
 
-    // Animirani cilj mjehurića desne libele (TD vs Yahoo)
     val bubbleStep by animateFloatAsState(
         targetValue = if (activeService == PriceService.TwelveData) 5f else -5f,
         animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
         label = "bubbleStep"
     )
 
-    // Donja libela: lijevo/sredina/desno ovisno o alertu
     val bottomTargetStep = when {
         alertPrice == null     -> 0f
-        alertPrice!! > spotNow ->  maxTicks.toFloat()    // alert iznad spota → desno (+)
-        alertPrice!! < spotNow -> -maxTicks.toFloat()    // alert ispod spota → lijevo (–)
+        alertPrice!! > spotNow ->  maxTicks.toFloat()
+        alertPrice!! < spotNow -> -maxTicks.toFloat()
         else                   -> 0f
     }
     val bottomBubbleStep by animateFloatAsState(
@@ -241,17 +214,26 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
         label = "bottomBubbleStep"
     )
 
-    // Ikone (PNG u drawable) – desna libela
     val res = LocalContext.current.resources
     val iconTop = remember { ImageBitmap.imageResource(res, R.drawable.ic_twelve) }
     val iconBottom = remember { ImageBitmap.imageResource(res, R.drawable.ic_yahoo) }
+
+    // demo RSI kombinacija (anim.)
+    val rsiTD = (50f + 25f * sin((tAnim * 0.85f).toDouble()).toFloat()).coerceIn(0f, 100f)
+    val rsiYahoo = (50f + 25f * sin((tAnim * 0.65f + 1.1f).toDouble()).toFloat()).coerceIn(0f, 100f)
+    val rsiCombinedTarget = ((rsiTD + rsiYahoo) * 0.5f).coerceIn(0f, 100f)
+    val rsiAnimated by animateFloatAsState(
+        targetValue = rsiCombinedTarget,
+        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
+        label = "rsiAnimated"
+    )
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // === 1) Kontejner s maskom i vodom (WebP ispod) ===
+        // 1) MASKA + VODA + WEBP (identično)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -264,7 +246,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
                     val levelY = (yWaterPxForDrawing / screenH) * h
 
-                    // valovi (amplitude skalirane s waveAmpMul)
                     val ampBase = 18f * waveAmpMul
                     val ampChop = 4.0f * waveAmpMul
                     val lenLong = w / 1.35f
@@ -281,7 +262,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                                 (ampBase * 0.55f) * sin((x / lenMid) * twoPi + phaseM) * 0.35f +
                                 ampChop * sin((x / lenShort) * twoPi + phaseS) * 0.5f
 
-                    // maska iznad vala
                     val cutTop = Path().apply {
                         moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, crestY(w))
                         var x = w; val step = 4f
@@ -290,7 +270,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     }
                     drawPath(cutTop, Color.White, blendMode = BlendMode.DstOut)
 
-                    // voda (gradijent)
                     val waterPath = Path().apply {
                         moveTo(0f, crestY(0f)); lineTo(w, crestY(w)); lineTo(w, h); lineTo(0f, h); close()
                     }
@@ -318,7 +297,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                         blendMode = BlendMode.Multiply
                     )
 
-                    // rub vala
                     val crestPath = Path().apply {
                         moveTo(0f, crestY(0f))
                         var x = 0f; val step = 4f
@@ -347,7 +325,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        // === 1b) Suptilni mjehurići (isti level + waveAmpMul) ===
+        // 1b) mjehurići (identično)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -414,32 +392,19 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
                     val aBase = (0.20f * (1f - frac) * VIS)
 
-                    drawCircle(
-                        Color.White.copy(alpha = (aBase * 0.95f).coerceAtMost(0.85f)),
-                        r,
-                        c,
-                        blendMode = addBlend
-                    )
+                    drawCircle(Color.White.copy(alpha = (aBase * 0.95f).coerceAtMost(0.85f)), r, c, blendMode = addBlend)
+                    drawCircle(Color.White.copy(alpha = (aBase * 1.2f).coerceAtMost(0.95f)), r * 0.55f,
+                        Offset(c.x + r * 0.38f, c.y - r * 0.40f), blendMode = addBlend)
 
-                    drawCircle(
-                        Color.White.copy(alpha = (aBase * 1.2f).coerceAtMost(0.95f)),
-                        r * 0.55f,
-                        Offset(c.x + r * 0.38f, c.y - r * 0.40f),
-                        blendMode = addBlend
-                    )
-
-                    drawCircle(
-                        Color.Black.copy(alpha = 0.10f),
-                        r * 1.04f,
-                        c,
-                        style = Stroke(width = (r * 0.18f).coerceAtLeast(0.6f))
-                    )
+                    drawCircle(Color.Black.copy(alpha = 0.10f), r * 1.04f, c,
+                        style = Stroke(width = (r * 0.18f).coerceAtLeast(0.6f)))
 
                     if (frac > 0.65f) {
                         val k = ((frac - 0.65f) / 0.35f).coerceIn(0f, 1f)
                         val dots = 3
+                        val twoPi2 = twoPi
                         for (d in 0 until dots) {
-                            val ang = (twoPi * (seed * 13f + d * 0.33f))
+                            val ang = (twoPi2 * (seed * 13f + d * 0.33f))
                             val rr = r * (1.6f + 0.6f * d)
                             val ox = cos(ang.toDouble()).toFloat() * rr * k
                             val oy = sin(ang.toDouble()).toFloat() * rr * k
@@ -456,7 +421,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 2) Minutni krug (ne diramo) ===
+        // 2) minutni krug — identično
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -482,7 +447,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawCircle(Color.White.copy(alpha = 0.8f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // === 3) Lijeva SKALA (ne diramo) ===
+        // 3) lijeva skala — identično
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -558,7 +523,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 4) Foreground: SVE CIJENE I NASLOV — realistični prijelazi (pragovi u PX) ===
+        // 4) naslov/spot/buy/sell — identično
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -566,8 +531,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(18.dp))
-
-            // --- Naslov + SPOT ---
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 FollowWaterText(
                     id = "title",
@@ -582,7 +545,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     followWave = true,
                     activeOverride = if (yWaterPxForTriggers <= 95f) 1f else 0f
                 )
-
                 FollowWaterText(
                     id = "spot",
                     text = euro(spotNow),
@@ -597,10 +559,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     activeOverride = if (yWaterPxForTriggers <= 150f) 1f else 0f
                 )
             }
-
             Spacer(Modifier.height(22.dp))
-
-            // --- BUY / SELL ---
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -621,7 +580,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     followWave = true,
                     activeOverride = if (yWaterPxForTriggers <= 265f) 1f else 0f
                 )
-
                 FollowWaterText(
                     id = "sell",
                     text = euro(sell),
@@ -636,18 +594,17 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     activeOverride = if (yWaterPxForTriggers <= 300f) 1f else 0f
                 )
             }
-
             Spacer(Modifier.weight(1f))
         }
 
-        // === 5) LIBELA — dolje (minus lijevo, plus desno; mjehurić po alertu) ===
+        // 5) donja libela — identično (minus/plus)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
             val radius = min(w, h) / 2f
 
             val span = 50f
-            val start = 90f - span / 2f // centrirano na dno
+            val start = 90f - span / 2f
             val stepAng = span / (maxTicks * 2)
             val outer = radius * 0.920f
             val inner = radius * 0.860f
@@ -656,27 +613,19 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val tubeWidth = (outer - inner) * 1.80f
             val tubeRect = Rect(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
 
-            // cijev
             drawArc(
                 color = Color(0xFF6F3511).copy(alpha = 0.45f),
-                startAngle = start,
-                sweepAngle = span,
-                useCenter = false,
-                topLeft = tubeRect.topLeft,
-                size = tubeRect.size,
+                startAngle = start, sweepAngle = span, useCenter = false,
+                topLeft = tubeRect.topLeft, size = tubeRect.size,
                 style = Stroke(width = tubeWidth, cap = StrokeCap.Round)
             )
             drawArc(
                 color = Color.White.copy(alpha = 0.12f),
-                startAngle = start,
-                sweepAngle = span,
-                useCenter = false,
-                topLeft = tubeRect.topLeft,
-                size = tubeRect.size,
+                startAngle = start, sweepAngle = span, useCenter = false,
+                topLeft = tubeRect.topLeft, size = tubeRect.size,
                 style = Stroke(width = tubeWidth * 0.30f, cap = StrokeCap.Round)
             )
 
-            // krajnje točke luka (kao u desnoj libeli)
             val startRad = Math.toRadians(start.toDouble()).toFloat()
             val endRad   = Math.toRadians((start + span).toDouble()).toFloat()
             val sx = cx + tubeR * cos(startRad)
@@ -684,7 +633,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val ex = cx + tubeR * cos(endRad)
             val ey = cy + tubeR * sin(endRad)
 
-            // "-" (crveno) i "+" (zeleno) poravnati po tangenti
             val signTextSize = 11.sp.toPx() * 1.25f
             val minusPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
@@ -712,20 +660,41 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 drawIntoCanvas { c ->
                     val nc = c.nativeCanvas
                     nc.save()
-                    nc.rotate(deg + 270f, x, y) // <-- bez 'pivot', koristi px, py
+                    nc.rotate(deg + 270f, x, y)
                     nc.drawText(text, x - halfW, y + baselineYOffset, paint)
                     nc.restore()
                 }
             }
             val startDeg = start
             val endDeg = start + span
-            drawSign("–", sx, sy, startDeg, minusPaint) // en-dash
+            drawSign("–", sx, sy, startDeg, minusPaint)
             drawSign("+", ex, ey, endDeg,  plusPaint)
 
-            // pozicija mjehurića (koristi bottomBubbleStep)
-            val rawTargetAng = start + (bottomBubbleStep + maxTicks) * stepAng
+            if (alertPrice != null) {
+                val txt = euro(alertPrice!!)
+                val txtPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    color = android.graphics.Color.argb(200, 255, 122, 0)
+                    textSize = 10.sp.toPx()
+                    typeface = android.graphics.Typeface.create(
+                        android.graphics.Typeface.DEFAULT,
+                        android.graphics.Typeface.BOLD
+                    )
+                }
+                val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
+                val textPath = AndroidPath().apply {
+                    addArc(arcRect, start + span, -span)
+                }
+                val pm = PathMeasure(textPath, false)
+                val textW = txtPaint.measureText(txt)
+                val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
+                val vOff = 8f
+                drawIntoCanvas { c ->
+                    c.nativeCanvas.drawTextOnPath(txt, textPath, hOff, vOff, txtPaint)
+                }
+            }
 
-            // clamp da mjehurić ne “pojede” oznake
+            val rawTargetAng = start + (bottomBubbleStep + maxTicks) * stepAng
             val circumference = (2f * Math.PI.toFloat() * tubeR)
             val bubbleR = tubeWidth * 0.40f
             val bubbleArc = (bubbleR * 2f) / circumference * 360f
@@ -736,21 +705,19 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val bx = cx + tubeR * cos(bRad)
             val by = cy + tubeR * sin(bRad)
 
-            // mjehurić
             drawCircle(Color.White.copy(alpha = 0.28f), bubbleR, Offset(bx, by))
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // === 6) LIBELA — gore (mirror, bez ikona) ===
+        // 6) GORNJA LIBELA — OBRNUTI NATPISI + MANJI FONT
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
             val radius = min(w, h) / 2f
 
             val span = 50f
-            val start = 270f - span / 2f // vrh
-            val stepAng = span / (maxTicks * 2)
+            val start = 270f - span / 2f
             val outer = radius * 0.920f
             val inner = radius * 0.860f
 
@@ -760,32 +727,98 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
             drawArc(
                 color = Color(0xFF6F3511).copy(alpha = 0.45f),
-                startAngle = start,
-                sweepAngle = span,
-                useCenter = false,
-                topLeft = tubeRect.topLeft,
-                size = tubeRect.size,
+                startAngle = start, sweepAngle = span, useCenter = false,
+                topLeft = tubeRect.topLeft, size = tubeRect.size,
                 style = Stroke(width = tubeWidth, cap = StrokeCap.Round)
             )
             drawArc(
                 color = Color.White.copy(alpha = 0.12f),
-                startAngle = start,
-                sweepAngle = span,
-                useCenter = false,
-                topLeft = tubeRect.topLeft,
-                size = tubeRect.size,
+                startAngle = start, sweepAngle = span, useCenter = false,
+                topLeft = tubeRect.topLeft, size = tubeRect.size,
                 style = Stroke(width = tubeWidth * 0.30f, cap = StrokeCap.Round)
             )
 
-            val rawTargetAng = start + (bubbleStep + maxTicks) * stepAng
+            // krajnje točke
+            val startRad = Math.toRadians(start.toDouble()).toFloat()
+            val endRad   = Math.toRadians((start + span).toDouble()).toFloat()
+            val sx = cx + tubeR * cos(startRad)
+            val sy = cy + tubeR * sin(startRad)
+            val ex = cx + tubeR * cos(endRad)
+            val ey = cy + tubeR * sin(endRad)
 
+            // ——— OVDJE PROMJENE: manji font + rotacija deg + 90f (nije naopako) ———
+            val signTextSize = 9.sp.toPx() * 1.10f
+            val labelPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                color = android.graphics.Color.argb(
+                    (warmWhite.alpha * 255).roundToInt(),
+                    (warmWhite.red * 255).roundToInt(),
+                    (warmWhite.green * 255).roundToInt(),
+                    (warmWhite.blue * 255).roundToInt()
+                )
+                textSize = signTextSize
+                typeface = android.graphics.Typeface.create(
+                    android.graphics.Typeface.DEFAULT,
+                    android.graphics.Typeface.BOLD
+                )
+            }
+            fun drawSign(text: String, x: Float, y: Float, deg: Float, paint: android.graphics.Paint) {
+                val fm = paint.fontMetrics
+                val baselineYOffset = - (fm.ascent + fm.descent) / 2f
+                val halfW = paint.measureText(text) / 2f
+                drawIntoCanvas { c ->
+                    val nc = c.nativeCanvas
+                    nc.save()
+                    nc.rotate(deg + 90f, x, y) // <— OKRENUTO UPRAVO
+                    nc.drawText(text, x - halfW, y + baselineYOffset, paint)
+                    nc.restore()
+                }
+            }
+            val startDeg = start
+            val endDeg = start + span
+            drawSign("0", sx, sy, startDeg, labelPaint)
+            drawSign("100", ex, ey, endDeg, labelPaint)
+
+            // RSI:XX po pathu (ispravna orijentacija)
+            val rsiText = "RSI:${rsiAnimated.roundToInt()}"
+            val txtPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                color = android.graphics.Color.argb(200, 255, 122, 0)
+                textSize = 10.sp.toPx()
+                typeface = android.graphics.Typeface.create(
+                    android.graphics.Typeface.DEFAULT,
+                    android.graphics.Typeface.BOLD
+                )
+            }
+
+            val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
+
+// 👉 promjena: piši u smjeru +span (ne −span) da tekst na vrhu bude uspravno
+            val textPath = AndroidPath().apply {
+                addArc(arcRect, start, span)
+            }
+
+            val pm = PathMeasure(textPath, false)
+            val textW = txtPaint.measureText(rsiText)
+            val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
+
+// 👉 offset prema gore kroz debljinu cijevi (pozitivno)
+            val vOff = 30f
+
+            drawIntoCanvas { c ->
+                c.nativeCanvas.drawTextOnPath(rsiText, textPath, hOff, vOff, txtPaint)
+            }
+
+            // mjehurić prema RSI
+            val rsi01 = (rsiAnimated / 100f).coerceIn(0f, 1f)
+            val rawAng = start + span * rsi01
             val circumference = (2f * Math.PI.toFloat() * tubeR)
             val bubbleR = tubeWidth * 0.40f
             val bubbleArc = (bubbleR * 2f) / circumference * 360f
             val marginDeg = bubbleArc * 0.60f + 1.5f
-            val clampedAng = rawTargetAng.coerceIn(start + marginDeg, start + span - marginDeg)
+            val ang = rawAng.coerceIn(start + marginDeg, start + span - marginDeg)
 
-            val bRad = Math.toRadians(clampedAng.toDouble()).toFloat()
+            val bRad = Math.toRadians(ang.toDouble()).toFloat()
             val bx = cx + tubeR * cos(bRad)
             val by = cy + tubeR * sin(bRad)
 
@@ -794,7 +827,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // === 7) “MOKRI” overlay pod vodom (ne diramo logiku, samo level) ===
+        // 7) mokri overlay — identično
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val levelY = (yWaterPxForDrawing / screenH) * h
@@ -830,7 +863,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // === 8) LIBELA — desna (original, s ikonama) ===
+        // 8) desna libela — identično
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -848,20 +881,14 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
 
             drawArc(
                 color = Color(0xFF6F3511).copy(alpha = 0.45f),
-                startAngle = start,
-                sweepAngle = span,
-                useCenter = false,
-                topLeft = tubeRect.topLeft,
-                size = tubeRect.size,
+                startAngle = start, sweepAngle = span, useCenter = false,
+                topLeft = tubeRect.topLeft, size = tubeRect.size,
                 style = Stroke(width = tubeWidth, cap = StrokeCap.Round)
             )
             drawArc(
                 color = Color.White.copy(alpha = 0.12f),
-                startAngle = start,
-                sweepAngle = span,
-                useCenter = false,
-                topLeft = tubeRect.topLeft,
-                size = tubeRect.size,
+                startAngle = start, sweepAngle = span, useCenter = false,
+                topLeft = tubeRect.topLeft, size = tubeRect.size,
                 style = Stroke(width = tubeWidth * 0.30f, cap = StrokeCap.Round)
             )
 
@@ -911,7 +938,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
     }
 }
 
-/* ---------- FollowWaterText ---------- */
+/* ---------- FollowWaterText (identično) ---------- */
 @Composable
 private fun FollowWaterText(
     id: String,
@@ -1096,35 +1123,5 @@ private fun FollowWaterText(
                 it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, pWave)
             }
         }
-    }
-}
-
-/** (Rezervni “tinted” tekst ako zatreba bez valova.) */
-@Composable
-private fun TintedPrice(
-    text: String,
-    baseColor: Color,
-    tint: Color,
-    tintAlpha: Float,
-    fontSizeSp: Int,
-    weight: FontWeight
-) {
-    Box(
-        modifier = Modifier
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                drawRect(tint.copy(alpha = tintAlpha), blendMode = BlendMode.SrcAtop)
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            fontSize = fontSizeSp.sp,
-            color = baseColor,
-            fontWeight = weight,
-            maxLines = 1,
-            overflow = TextOverflow.Clip
-        )
     }
 }
