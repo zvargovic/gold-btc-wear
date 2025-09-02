@@ -237,14 +237,14 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             .background(Color.Black)
     ) {
         // Debug overlay (gore desno)
-        Text(
-            text = "yWater=%.1f  plateau=%.2f  release=%.2f".format(yWaterPxForDrawing, plateauLeft, releaseLeft),
-            color = Color.Cyan,
-            fontSize = 11.sp,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(6.dp)
-        )
+        //Text(
+            //text = "yWater=%.1f  plateau=%.2f  release=%.2f".format(yWaterPxForDrawing, plateauLeft, releaseLeft),
+            //color = Color.Cyan,
+            //fontSize = 11.sp,
+            //modifier = Modifier
+                //.align(Alignment.TopEnd)
+                //.padding(6.dp)
+        //)
 
         // === 1) Kontejner s maskom i vodom (WebP ispod) ===
         Box(
@@ -292,8 +292,9 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                     drawPath(
                         path = waterPath,
                         brush = Brush.verticalGradient(
-                            colors = listOf(Color(0x66FF7A00), Color(0xFF1A0A00)),
-                            startY = levelY, endY = h
+                            colors = listOf(Color(0xFFE2791C), Color(0xFF1A0A00)),
+                            startY = levelY - 100f,
+                            endY = h
                         ),
                         blendMode = BlendMode.Multiply
                     )
@@ -386,30 +387,69 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 val y = y0 - e * rise
 
                 if (y < levelY - 6f && y > h * 0.08f) {
+                    // --- pojačivači vidljivosti ---
+                    val VIS = 0.25f
+                    val addBlend = BlendMode.Plus
+
                     val spotPx = 30.sp.toPx()
                     fun flerp(a: Float, b: Float, t: Float) = a + (b - a) * t
-                    val maxR = spotPx * 0.5f
-                    val minR = maxR * 0.25f
+                    val maxR = spotPx * 0.62f
+                    val minR = maxR * 0.26f
                     val baseR = flerp(minR, maxR, seed)
-                    val r = (baseR * (0.85f + 0.35f * e)).coerceAtMost(maxR)
-                    val a = (0.18f * (1f - frac)) * 0.85f
-                    val sway = (sin((tAnim + seed * 7f) * 0.9f) * 2.0f)
+                    val r = baseR * (0.85f + 0.35f * e)
 
-                    drawCircle(Color.White.copy(alpha = a * 0.75f), r, Offset(x + sway, y))
-                    drawCircle(Color.White.copy(alpha = a), r * 0.55f, Offset(x + sway + r * 0.35f, y - r * 0.35f))
+                    // sin -> Double, pa eksplicitno u Float
+                    val sway = (sin(((tAnim + seed * 7f) * 0.9f).toDouble()).toFloat()) * 2.0f
+                    val c = Offset(x + sway, y)
 
+                    // 1) soft glow
+                    drawCircle(
+                        Color.White.copy(alpha = (0.20f * (1f - frac) * VIS * 0.35f).coerceAtMost(0.35f)),
+                        r * 1.8f,
+                        c.copy(y = c.y + r * 0.25f),
+                        blendMode = addBlend
+                    )
+
+                    val aBase = (0.20f * (1f - frac) * VIS)
+
+                    // 2) tijelo mjehurića
+                    drawCircle(
+                        Color.White.copy(alpha = (aBase * 0.95f).coerceAtMost(0.85f)),
+                        r,
+                        c,
+                        blendMode = addBlend
+                    )
+
+                    // 3) specular highlight
+                    drawCircle(
+                        Color.White.copy(alpha = (aBase * 1.2f).coerceAtMost(0.95f)),
+                        r * 0.55f,
+                        Offset(c.x + r * 0.38f, c.y - r * 0.40f),
+                        blendMode = addBlend
+                    )
+
+                    // 4) tamni obrub
+                    drawCircle(
+                        Color.Black.copy(alpha = 0.10f),
+                        r * 1.04f,
+                        c,
+                        style = Stroke(width = (r * 0.18f).coerceAtLeast(0.6f))
+                    )
+
+                    // 5) prskanje
                     if (frac > 0.65f) {
                         val k = ((frac - 0.65f) / 0.35f).coerceIn(0f, 1f)
                         val dots = 3
                         for (d in 0 until dots) {
-                            val ang = twoPi * (seed * 13f + d * 0.33f)
+                            val ang = (twoPi * (seed * 13f + d * 0.33f))
                             val rr = r * (1.6f + 0.6f * d)
-                            val ox = cos(ang) * rr * k
-                            val oy = sin(ang) * rr * k
+                            val ox = cos(ang.toDouble()).toFloat() * rr * k
+                            val oy = sin(ang.toDouble()).toFloat() * rr * k
                             drawCircle(
-                                Color.White.copy(alpha = a * (0.5f * (1f - k))),
+                                Color.White.copy(alpha = (aBase * (0.55f * (1f - k))).coerceAtMost(0.35f)),
                                 r * (0.18f + 0.10f * d),
-                                Offset(x + sway + ox, y - 2f + oy)
+                                Offset(c.x + ox, c.y - 2f + oy),
+                                blendMode = addBlend
                             )
                         }
                     }
