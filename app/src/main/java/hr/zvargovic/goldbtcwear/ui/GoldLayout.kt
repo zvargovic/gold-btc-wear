@@ -23,9 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
-import androidx.wear.compose.material.Text
 import kotlin.math.*
 import java.util.Locale
 import androidx.compose.runtime.withFrameNanos
@@ -40,13 +38,25 @@ import android.widget.ImageView
 import android.graphics.drawable.AnimatedImageDrawable
 import androidx.core.content.ContextCompat
 import hr.zvargovic.goldbtcwear.R
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.hypot
+
+// TAP na donju libelu -> Alerts
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 
 enum class PriceService { TwelveData, Yahoo }
 private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
 
 @Composable
-fun GoldStaticScreen(modifier: Modifier = Modifier) {
+fun GoldStaticScreen(
+    modifier: Modifier = Modifier,
+    onOpenAlerts: () -> Unit = {} // <- NOVO: hook za AlertsScreen
+) {
     val spotNow = 2315.40
     val premiumPct = 0.0049
     val buy = spotNow * (1 + premiumPct)
@@ -710,7 +720,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // 6) GORNJA LIBELA — OBRNUTI NATPISI + MANJI FONT
+        // 6) GORNJA LIBELA — OBRNUTI NATPISI + MANJI FONT + RSI labela
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -738,7 +748,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 style = Stroke(width = tubeWidth * 0.30f, cap = StrokeCap.Round)
             )
 
-            // krajnje točke
             val startRad = Math.toRadians(start.toDouble()).toFloat()
             val endRad   = Math.toRadians((start + span).toDouble()).toFloat()
             val sx = cx + tubeR * cos(startRad)
@@ -746,7 +755,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             val ex = cx + tubeR * cos(endRad)
             val ey = cy + tubeR * sin(endRad)
 
-            // ——— OVDJE PROMJENE: manji font + rotacija deg + 90f (nije naopako) ———
+            val warmWhite = Color(0xFFDCD3C8)
             val signTextSize = 9.sp.toPx() * 1.10f
             val labelPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
@@ -769,7 +778,7 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
                 drawIntoCanvas { c ->
                     val nc = c.nativeCanvas
                     nc.save()
-                    nc.rotate(deg + 90f, x, y) // <— OKRENUTO UPRAVO
+                    nc.rotate(deg + 90f, x, y)
                     nc.drawText(text, x - halfW, y + baselineYOffset, paint)
                     nc.restore()
                 }
@@ -779,7 +788,6 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawSign("0", sx, sy, startDeg, labelPaint)
             drawSign("100", ex, ey, endDeg, labelPaint)
 
-            // RSI:XX po pathu (ispravna orijentacija)
             val rsiText = "RSI:${rsiAnimated.roundToInt()}"
             val txtPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
@@ -792,24 +800,16 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             }
 
             val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
-
-// 👉 promjena: piši u smjeru +span (ne −span) da tekst na vrhu bude uspravno
-            val textPath = AndroidPath().apply {
-                addArc(arcRect, start, span)
-            }
-
+            val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
             val pm = PathMeasure(textPath, false)
             val textW = txtPaint.measureText(rsiText)
             val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
-
-// 👉 offset prema gore kroz debljinu cijevi (pozitivno)
             val vOff = 30f
 
             drawIntoCanvas { c ->
                 c.nativeCanvas.drawTextOnPath(rsiText, textPath, hOff, vOff, txtPaint)
             }
 
-            // mjehurić prema RSI
             val rsi01 = (rsiAnimated / 100f).coerceIn(0f, 1f)
             val rawAng = start + span * rsi01
             val circumference = (2f * Math.PI.toFloat() * tubeR)
@@ -935,6 +935,17 @@ fun GoldStaticScreen(modifier: Modifier = Modifier) {
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
+
+        // === TAP TARGET: donjih ~35% ekrana (zona donje libele) otvara Alerts ===
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.35f)
+                .align(Alignment.BottomCenter)
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onOpenAlerts() })
+                }
+        )
     }
 }
 

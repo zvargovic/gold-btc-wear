@@ -3,8 +3,7 @@ import com.android.build.gradle.internal.cxx.configure.gradleLocalProperties
 
 plugins {
     id("com.android.application")
-    kotlin("android")                          // Kotlin 2.x
-    id("org.jetbrains.kotlin.plugin.compose")  // Compose compiler plugin za Kotlin 2.x
+    id("org.jetbrains.kotlin.android") // ← OVO koristimo, bez compose plugina
 }
 
 android {
@@ -24,27 +23,33 @@ android {
         buildConfigField("String", "TWELVEDATA_API_KEY", "\"$tdKey\"")
     }
 
-    // Uskladi Java/Kotlin na 17
+    // Java/Kotlin 17
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 
     buildFeatures {
         compose = true
         buildConfig = true
     }
-    // Compose 1.6.8 ↔ compiler ext 1.5.15
+    // Compose 1.6.8 ↔ compiler ext 1.5.15 (radi s Kotlin 1.9.24)
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
+        kotlinCompilerExtensionVersion = "1.5.14"
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 }
 
 dependencies {
     // Jetpack Compose (core)
+    implementation("androidx.compose.material:material-icons-extended:1.6.8")
+    implementation("androidx.compose.material:material:1.6.8")
     implementation("androidx.compose.ui:ui:1.6.8")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.8")
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
@@ -53,7 +58,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
 
-    // Wear Compose (umjesto material3)
+    // Wear Compose
     implementation("androidx.wear.compose:compose-material:1.3.1")
     implementation("androidx.wear.compose:compose-foundation:1.3.1")
     implementation("androidx.wear.compose:compose-navigation:1.3.1")
@@ -65,4 +70,5 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi:1.15.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
+    implementation("androidx.navigation:navigation-compose:2.8.0")
 }
