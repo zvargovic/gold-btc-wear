@@ -48,6 +48,7 @@ android {
 
 dependencies {
     // Jetpack Compose (core)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
     implementation("androidx.compose.material:material:1.6.8")
     implementation("androidx.compose.ui:ui:1.6.8")
