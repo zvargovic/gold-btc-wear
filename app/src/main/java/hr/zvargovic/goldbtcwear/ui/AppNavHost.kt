@@ -1,60 +1,65 @@
 package hr.zvargovic.goldbtcwear.ui
-
+import hr.zvargovic.goldbtcwear.presentation.AddAlertScreen
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import hr.zvargovic.goldbtcwear.data.AlertsStore
 import kotlinx.coroutines.launch
-import kotlin.math.abs
+import androidx.compose.ui.platform.LocalContext
+import hr.zvargovic.goldbtcwear.data.AlertsStore
+import hr.zvargovic.goldbtcwear.data.SelectedAlertStore
 
 @Composable
 fun AppNavHost() {
     val navController = rememberNavController()
 
-    // Spot (za boje i usporedbe)
     val spot = 2315.40
 
-    // --- DataStore setup ---
+    // --- PERSISTENCIJA LISTE ---
     val ctx = LocalContext.current
     val store = remember { AlertsStore(ctx) }
+    val selectedStore = remember { SelectedAlertStore(ctx) } // <<< NOVO
     val scope = rememberCoroutineScope()
 
-    // Jedinstvena lista alerta u memoriji
     val alerts = remember { mutableStateListOf<Double>() }
+    val selectedAlert = remember { mutableStateOf<Double?>(null) } // <<< NOVO
 
-    // Učitaj iz DataStore-a
     LaunchedEffect(Unit) {
-        runCatching { store.load() }
-            .onSuccess { list ->
-                alerts.clear()
-                alerts.addAll(list)
-            }
+        alerts.clear()
+        alerts.addAll(store.load())
+        selectedAlert.value = selectedStore.load() // <<< NOVO
     }
-    // -----------------------
 
     NavHost(navController = navController, startDestination = "gold") {
 
         composable("gold") {
-            // Proslijedi alerts tako da popup u Gold-u ima podatke
             GoldStaticScreen(
                 onOpenAlerts = { navController.navigate("alerts") },
-                alerts = alerts
+                alerts = alerts,
+                selectedAlert = selectedAlert.value,                        // <<< NOVO
+                onSelectAlert = { v ->                                     // <<< NOVO
+                    selectedAlert.value = v
+                    scope.launch { selectedStore.save(v) }
+                }
             )
         }
 
         composable("alerts") {
             AlertsScreen(
                 onBack = {
-                    navController.popBackStack()   // vraća Boolean – zanemari
+                    navController.popBackStack()
                     Unit
                 },
                 onAdd = { navController.navigate("addAlert") },
                 onDelete = { price ->
                     alerts.remove(price)
-                    // spremi nakon promjene
                     scope.launch { store.save(alerts.toList()) }
+                    if (selectedAlert.value != null &&
+                        kotlin.math.abs(selectedAlert.value!! - price) < 0.0001
+                    ) {
+                        selectedAlert.value = null
+                        scope.launch { selectedStore.save(null) }
+                    }
                 },
                 alerts = alerts,
                 spot = spot
@@ -62,8 +67,7 @@ fun AppNavHost() {
         }
 
         composable("addAlert") {
-            // KORISTI POTPUNO KVALIFICIRANO IME!
-            hr.zvargovic.goldbtcwear.presentation.AddAlertScreen(
+            AddAlertScreen(
                 spot = spot,
                 onBack = {
                     navController.popBackStack()
@@ -71,11 +75,10 @@ fun AppNavHost() {
                 },
                 onConfirm = { value ->
                     if (value.isFinite() && value > 0.0 &&
-                        alerts.none { abs(it - value) < 0.0001 }
+                        alerts.none { kotlin.math.abs(it - value) < 0.0001 }
                     ) {
                         alerts.add(value)
                         alerts.sort()
-                        // spremi nakon dodavanja
                         scope.launch { store.save(alerts.toList()) }
                     }
                     navController.popBackStack()

@@ -54,8 +54,11 @@ private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
 @Composable
 fun GoldStaticScreen(
     modifier: Modifier = Modifier,
-    onOpenAlerts: () -> Unit = {},
-    alerts: List<Double> = emptyList()      // <- lista alerta za popup
+    onOpenAlerts: () -> Unit = {},            // ostaje isto (tap zona donje libele)
+    alerts: List<Double> = emptyList(),       // lista postojećih alerta za popup
+    // >>> NOVO: trajni odabir dolazi izvana + callback za spremanje
+    selectedAlert: Double? = null,
+    onSelectAlert: (Double?) -> Unit = {}
 ) {
     val spotNow = 2315.40
     val premiumPct = 0.0049
@@ -64,10 +67,11 @@ fun GoldStaticScreen(
 
     val lastRequestPrice = 2312.0
 
-    // popup state
+    // Popup state
     var showPicker by remember { mutableStateOf(false) }
 
-    var alertPrice by remember { mutableStateOf<Double?>(2300.50) }
+    // >>> NOVO: alertPrice se inicijalizira iz selectedAlert (preživljava restart)
+    var alertPrice by remember(selectedAlert) { mutableStateOf<Double?>(selectedAlert) }
     val alertWindowEur = 30.0
     val alertHitToleranceEur = 0.10
 
@@ -84,7 +88,11 @@ fun GoldStaticScreen(
             ap >= anchor -> spotNow >= ap || closeEnough
             else -> spotNow <= ap || closeEnough
         }
-        if (crossed) alertPrice = null
+        if (crossed) {
+            // “Ispalio” se ovaj alert – očisti i trajno
+            alertPrice = null
+            onSelectAlert(null) // >>> NOVO
+        }
     }
 
     val configuration = LocalConfiguration.current
@@ -241,12 +249,14 @@ fun GoldStaticScreen(
         label = "rsiAnimated"
     )
 
+    // ======= CRTANJE – ostaje identično =======
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 1) MASKA + VODA + WEBP (identično)
+        // 1) MASKA + VODA + WEBP
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -338,7 +348,7 @@ fun GoldStaticScreen(
             )
         }
 
-        // 1b) mjehurići — identično
+        // 1b) mjehurići
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -434,7 +444,7 @@ fun GoldStaticScreen(
             }
         }
 
-        // 2) minutni krug — identično
+        // 2) minutni krug
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -460,7 +470,7 @@ fun GoldStaticScreen(
             drawCircle(Color.White.copy(alpha = 0.8f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // 3) lijeva skala — identično
+        // 3) lijeva skala
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -536,7 +546,7 @@ fun GoldStaticScreen(
             }
         }
 
-        // 4) naslov/spot/buy/sell — SPOT je klikabilan za popup
+        // 4) naslov/spot/buy/sell  — SPOT je klikabilan -> popup
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -613,7 +623,7 @@ fun GoldStaticScreen(
             Spacer(Modifier.weight(1f))
         }
 
-        // 5) donja libela — minus/plus + tekst alerta
+        // 5) donja libela
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -726,7 +736,7 @@ fun GoldStaticScreen(
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // 6) GORNJA LIBELA — identično
+        // 6) GORNJA LIBELA + RSI
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -833,7 +843,7 @@ fun GoldStaticScreen(
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // 7) mokri overlay — identično
+        // 7) mokri overlay
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val levelY = (yWaterPxForDrawing / screenH) * h
@@ -869,7 +879,7 @@ fun GoldStaticScreen(
             }
         }
 
-        // 8) desna libela — identično
+        // 8) desna libela (servisi)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -942,24 +952,23 @@ fun GoldStaticScreen(
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // === TAP TARGET: donjih ~35% ekrana (zona donje libele) otvara Alerts ===
+        // === TAP TARGET: donjih ~35% ekrana (zona donje libele) otvara Alerts listu ===
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.35f)
                 .align(Alignment.BottomCenter)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onOpenAlerts() })
-                }
+                .pointerInput(Unit) { detectTapGestures(onTap = { onOpenAlerts() }) }
         )
 
-        // POPUP
+        // NOVO: POPUP – odabir alerta; spremamo kroz onSelectAlert
         if (showPicker) {
             AlertPickerDialog(
                 alerts = alerts,
                 spot = spotNow,
                 onSelect = { chosen ->
                     alertPrice = chosen
+                    onSelectAlert(chosen)   // <<< NOVO: trajno spremanje
                     showPicker = false
                 },
                 onDismiss = { showPicker = false }
@@ -968,7 +977,7 @@ fun GoldStaticScreen(
     }
 }
 
-/* ---------- FollowWaterText ---------- */
+/* ---------- FollowWaterText (ostaje tvoja verzija) ---------- */
 @Composable
 private fun FollowWaterText(
     id: String,
@@ -1045,8 +1054,9 @@ private fun FollowWaterText(
                 }
             )
         }
-        val textW = measurePaint.measureText(text)
-        val cx = w / 2f
+        val textW = measurePaint.measureText(text) // <-- ovo postoji
+        val cx = w / 2f                              // <-- i ovo postoji
+
         val padPx = with(density) { 6.dp.toPx() }
         val left = max(0f, cx - textW / 2f - padPx)
         val right = min(w, cx + textW / 2f + padPx)
@@ -1155,7 +1165,6 @@ private fun FollowWaterText(
         }
     }
 }
-
 /* ---------- POPUP: AlertPickerDialog ---------- */
 @Composable
 private fun AlertPickerDialog(
