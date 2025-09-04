@@ -48,6 +48,12 @@ import kotlin.math.hypot
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 
+// NOVO: za popup
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.wear.compose.material.Text as WearText
+
 enum class PriceService { TwelveData, Yahoo }
 private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
@@ -55,7 +61,8 @@ private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
 @Composable
 fun GoldStaticScreen(
     modifier: Modifier = Modifier,
-    onOpenAlerts: () -> Unit = {} // <- NOVO: hook za AlertsScreen
+    onOpenAlerts: () -> Unit = {},            // ostaje isto
+    alerts: List<Double> = emptyList()        // NOVO: lista alerta (default prazno)
 ) {
     val spotNow = 2315.40
     val premiumPct = 0.0049
@@ -63,6 +70,9 @@ fun GoldStaticScreen(
     val sell = spotNow * (1 - premiumPct)
 
     val lastRequestPrice = 2312.0
+
+    // NOVO: popup state
+    var showPicker by remember { mutableStateOf(false) }
 
     var alertPrice by remember { mutableStateOf<Double?>(2300.50) }
     val alertWindowEur = 30.0
@@ -335,7 +345,7 @@ fun GoldStaticScreen(
             )
         }
 
-        // 1b) mjehurići (identično)
+        // 1b) mjehurići — identično
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -404,7 +414,7 @@ fun GoldStaticScreen(
 
                     drawCircle(Color.White.copy(alpha = (aBase * 0.95f).coerceAtMost(0.85f)), r, c, blendMode = addBlend)
                     drawCircle(Color.White.copy(alpha = (aBase * 1.2f).coerceAtMost(0.95f)), r * 0.55f,
-                        Offset(c.x + r * 0.38f, c.y - r * 0.40f), blendMode = addBlend)
+                        Offset(c.x + r * 0.38f, c.y - r * 0.40f), blendMode = BlendMode.Plus)
 
                     drawCircle(Color.Black.copy(alpha = 0.10f), r * 1.04f, c,
                         style = Stroke(width = (r * 0.18f).coerceAtLeast(0.6f)))
@@ -422,7 +432,7 @@ fun GoldStaticScreen(
                                 Color.White.copy(alpha = (aBase * (0.55f * (1f - k))).coerceAtMost(0.35f)),
                                 r * (0.18f + 0.10f * d),
                                 Offset(c.x + ox, c.y - 2f + oy),
-                                blendMode = addBlend
+                                blendMode = BlendMode.Plus
                             )
                         }
                     }
@@ -533,7 +543,7 @@ fun GoldStaticScreen(
             }
         }
 
-        // 4) naslov/spot/buy/sell — identično
+        // 4) naslov/spot/buy/sell — identično (SPOT sada klikabilan za popup)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -566,7 +576,10 @@ fun GoldStaticScreen(
                     yOffset = (-20).dp,
                     blurStrengthDp = 2.dp,
                     followWave = false,
-                    activeOverride = if (yWaterPxForTriggers <= 150f) 1f else 0f
+                    activeOverride = if (yWaterPxForTriggers <= 150f) 1f else 0f,
+                    modifier = Modifier.pointerInput(Unit) {
+                        detectTapGestures(onTap = { showPicker = true }) // NOVO
+                    }
                 )
             }
             Spacer(Modifier.height(22.dp))
@@ -607,7 +620,7 @@ fun GoldStaticScreen(
             Spacer(Modifier.weight(1f))
         }
 
-        // 5) donja libela — identično (minus/plus)
+        // 5) donja libela — identično (minus/plus + tekst alerta)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -720,7 +733,7 @@ fun GoldStaticScreen(
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // 6) GORNJA LIBELA — OBRNUTI NATPISI + MANJI FONT + RSI labela
+        // 6) GORNJA LIBELA — identično
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -946,6 +959,19 @@ fun GoldStaticScreen(
                     detectTapGestures(onTap = { onOpenAlerts() })
                 }
         )
+
+        // NOVO: POPUP
+        if (showPicker) {
+            AlertPickerDialog(
+                alerts = alerts,
+                spot = spotNow,
+                onSelect = { chosen ->
+                    alertPrice = chosen
+                    showPicker = false
+                },
+                onDismiss = { showPicker = false }
+            )
+        }
     }
 }
 
@@ -1132,6 +1158,87 @@ private fun FollowWaterText(
             drawIntoCanvas {
                 it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, sWave)
                 it.nativeCanvas.drawTextOnPath(text, path, hOff, 0f, pWave)
+            }
+        }
+    }
+}
+
+/* ---------- POPUP: AlertPickerDialog ---------- */
+@Composable
+private fun AlertPickerDialog(
+    alerts: List<Double>,
+    spot: Double?,
+    onSelect: (Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xAA000000))
+                .padding(12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .background(Color(0xFF0B0B0B), RoundedCornerShape(16.dp))
+                    .padding(vertical = 10.dp, horizontal = 12.dp)
+            ) {
+                WearText(
+                    text = "Odaberi alert",
+                    color = Color(0xFFFF7A00),
+                    fontSize = 16.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 8.dp)
+                )
+
+                if (alerts.isEmpty()) {
+                    WearText(
+                        text = "Nema spremljenih alerta",
+                        color = Color(0xFFB0B0B0),
+                        fontSize = 13.sp,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(vertical = 12.dp)
+                    )
+                } else {
+                    alerts.forEach { price ->
+                        val isBelow = spot?.let { price < it } ?: false
+                        val color = if (isBelow) Color(0xFFE0524D) else Color(0xFF2FBF6B)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(price) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            WearText(
+                                text = "€" + String.format(Locale.US, "%,.2f", price),
+                                color = color,
+                                fontSize = 16.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(color, shape = RoundedCornerShape(50))
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 10.dp)
+                        .background(Color(0xFFFF7A00), RoundedCornerShape(12.dp))
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 18.dp, vertical = 8.dp)
+                ) {
+                    WearText("Zatvori", color = Color.Black, fontSize = 14.sp)
+                }
             }
         }
     }
