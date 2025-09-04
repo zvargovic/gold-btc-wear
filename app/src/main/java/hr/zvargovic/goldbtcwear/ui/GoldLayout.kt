@@ -62,7 +62,7 @@ private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
 fun GoldStaticScreen(
     modifier: Modifier = Modifier,
     onOpenAlerts: () -> Unit = {},            // ostaje isto
-    alerts: List<Double> = emptyList()        // NOVO: lista alerta (default prazno)
+    alerts: List<Double> = emptyList()      // NOVO: lista alerta (default prazno)
 ) {
     val spotNow = 2315.40
     val premiumPct = 0.0049

@@ -1,6 +1,7 @@
 package hr.zvargovic.goldbtcwear.ui
 
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -12,7 +13,7 @@ import hr.zvargovic.goldbtcwear.data.AlertsStore
 fun AppNavHost() {
     val navController = rememberNavController()
 
-    // Spot koji koristiš za boje u listi
+    // Spot (za boje liste u AlertsScreen)
     val spot = 2315.40
 
     // --- PERSISTENCIJA ---
@@ -20,7 +21,7 @@ fun AppNavHost() {
     val store = remember { AlertsStore(ctx) }
     val scope = rememberCoroutineScope()
 
-    // Lista u memoriji + inicijalno učitavanje iz DataStore-a
+    // Živa lista u memoriji + inicijalno učitavanje iz DataStore-a
     val alerts = remember { mutableStateListOf<Double>() }
     LaunchedEffect(Unit) {
         alerts.clear()
@@ -28,12 +29,23 @@ fun AppNavHost() {
     }
     // ----------------------
 
+    // Ako kasnije dodaš popup/odabir u GoldStaticScreen, možeš koristiti ovo:
+    val selectedAlert = rememberSaveable { mutableStateOf<Double?>(null) }
+
     NavHost(navController = navController, startDestination = "gold") {
 
         composable("gold") {
+            // ⬇️ Trenutna verzija GoldStaticScreen-a prima SAMO onOpenAlerts
             GoldStaticScreen(
                 onOpenAlerts = { navController.navigate("alerts") }
             )
+            // Kad nadogradiš GoldStaticScreen da prima alerts/selectedAlert:
+            // GoldStaticScreen(
+            //     onOpenAlerts = { navController.navigate("alerts") },
+            //     alerts = alerts,
+            //     selectedAlert = selectedAlert.value,
+            //     onSelectAlert = { selectedAlert.value = it }
+            // )
         }
 
         composable("alerts") {
@@ -45,6 +57,14 @@ fun AppNavHost() {
                 onAdd = { navController.navigate("addAlert") },
                 onDelete = { price ->
                     alerts.remove(price)
+
+                    // ako je obrisan baš selektirani — makni selekciju (ako ga koristiš)
+                    if (selectedAlert.value != null &&
+                        kotlin.math.abs(selectedAlert.value!! - price) < 0.0001
+                    ) {
+                        selectedAlert.value = null
+                    }
+
                     // spremi nakon promjene
                     scope.launch { store.save(alerts.toList()) }
                 },
@@ -66,6 +86,10 @@ fun AppNavHost() {
                     ) {
                         alerts.add(value)
                         alerts.sort()
+
+                        // opcionalno: novo dodani postavi kao selektirani (kad ga budeš koristio)
+                        selectedAlert.value = value
+
                         // spremi nakon dodavanja
                         scope.launch { store.save(alerts.toList()) }
                     }
