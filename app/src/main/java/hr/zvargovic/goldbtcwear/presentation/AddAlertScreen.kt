@@ -1,4 +1,4 @@
-package hr.zvargovic.goldbtcwear.ui
+package hr.zvargovic.goldbtcwear.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

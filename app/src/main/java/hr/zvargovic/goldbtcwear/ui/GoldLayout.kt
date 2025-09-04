@@ -40,13 +40,6 @@ import androidx.core.content.ContextCompat
 import hr.zvargovic.goldbtcwear.R
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.hypot
-
-// TAP na donju libelu -> Alerts
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 
 // NOVO: za popup
 import androidx.compose.ui.window.Dialog
@@ -61,8 +54,8 @@ private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
 @Composable
 fun GoldStaticScreen(
     modifier: Modifier = Modifier,
-    onOpenAlerts: () -> Unit = {},            // ostaje isto
-    alerts: List<Double> = emptyList()      // NOVO: lista alerta (default prazno)
+    onOpenAlerts: () -> Unit = {},
+    alerts: List<Double> = emptyList()      // <- lista alerta za popup
 ) {
     val spotNow = 2315.40
     val premiumPct = 0.0049
@@ -71,7 +64,7 @@ fun GoldStaticScreen(
 
     val lastRequestPrice = 2312.0
 
-    // NOVO: popup state
+    // popup state
     var showPicker by remember { mutableStateOf(false) }
 
     var alertPrice by remember { mutableStateOf<Double?>(2300.50) }
@@ -543,7 +536,7 @@ fun GoldStaticScreen(
             }
         }
 
-        // 4) naslov/spot/buy/sell — identično (SPOT sada klikabilan za popup)
+        // 4) naslov/spot/buy/sell — SPOT je klikabilan za popup
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -578,7 +571,7 @@ fun GoldStaticScreen(
                     followWave = false,
                     activeOverride = if (yWaterPxForTriggers <= 150f) 1f else 0f,
                     modifier = Modifier.pointerInput(Unit) {
-                        detectTapGestures(onTap = { showPicker = true }) // NOVO
+                        detectTapGestures(onTap = { showPicker = true })
                     }
                 )
             }
@@ -620,7 +613,7 @@ fun GoldStaticScreen(
             Spacer(Modifier.weight(1f))
         }
 
-        // 5) donja libela — identično (minus/plus + tekst alerta)
+        // 5) donja libela — minus/plus + tekst alerta
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -960,7 +953,7 @@ fun GoldStaticScreen(
                 }
         )
 
-        // NOVO: POPUP
+        // POPUP
         if (showPicker) {
             AlertPickerDialog(
                 alerts = alerts,
@@ -975,7 +968,7 @@ fun GoldStaticScreen(
     }
 }
 
-/* ---------- FollowWaterText (identično) ---------- */
+/* ---------- FollowWaterText ---------- */
 @Composable
 private fun FollowWaterText(
     id: String,
