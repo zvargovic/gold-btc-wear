@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.*
@@ -36,10 +37,13 @@ fun SetupScreen(
 
     val focusRequester = remember { FocusRequester() }
 
-    val orange = Color(0xFFFF7A00)
-    val warmWhite = Color(0xFFDCD3C8)
-    val fieldBg = Color(0xFF151515)
+    // Paleta iz aplikacije
+    val orange      = Color(0xFFFF7A00)
+    val orangeLite  = Color(0xFFFFA040)
+    val warmWhite   = Color(0xFFDCD3C8)
+    val fieldBg     = Color(0xFF151515)
     val fieldStroke = Color(0x33FFFFFF)
+    val chipBg      = Color(0xFF1E1E1E)
 
     Box(
         modifier = Modifier
@@ -111,56 +115,80 @@ fun SetupScreen(
                 label = { Text("Unesi na mobitelu") },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ChipDefaults.chipColors(
-                    backgroundColor = Color(0xFF1E1E1E),
+                    backgroundColor = chipBg,
                     contentColor = orange
                 )
             )
 
             Spacer(Modifier.height(6.dp))
 
-            // Pokaži / sakrij ključ
+            // Pokaži / sakrij ključ — narančasti gradient kada je checked
             ToggleChip(
                 checked = showKey,
                 onCheckedChange = { checked -> showKey = checked },
                 label = { Text("Pokaži API key") },
                 toggleControl = { Switch(checked = showKey) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ToggleChipDefaults.toggleChipColors(
+                    // UNCHECKED (sivo)
+                    uncheckedStartBackgroundColor = chipBg,
+                    uncheckedEndBackgroundColor = chipBg,
+                    uncheckedContentColor = warmWhite,
+                    uncheckedToggleControlColor = warmWhite,
+                    // CHECKED (narančasti gradient)
+                    checkedStartBackgroundColor = orange,
+                    checkedEndBackgroundColor = orangeLite,
+                    checkedContentColor = Color.Black,
+                    checkedToggleControlColor = Color.Black
+                )
             )
 
             Spacer(Modifier.height(10.dp))
 
-            // Alarm switch
+            // Alarm switch — isti narančasti gradient u checked stanju
             ToggleChip(
                 checked = alarm,
                 onCheckedChange = { checked -> alarm = checked },
                 label = { Text("Alarm kad alert pogodi spot") },
                 toggleControl = { Switch(checked = alarm) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ToggleChipDefaults.toggleChipColors(
+                    uncheckedStartBackgroundColor = chipBg,
+                    uncheckedEndBackgroundColor = chipBg,
+                    uncheckedContentColor = warmWhite,
+                    uncheckedToggleControlColor = warmWhite,
+                    checkedStartBackgroundColor = orange,
+                    checkedEndBackgroundColor = orangeLite,
+                    checkedContentColor = Color.Black,
+                    checkedToggleControlColor = Color.Black
+                )
             )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
 
+            // Akcijski gumbi – “ista metoda” kao na alertima (podesivi)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Button(
+                ActionButton(
+                    text = "Back",
                     onClick = onBack,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = orange,
-                        contentColor = Color.Black
-                    )
-                ) { Text("Back") }
-
-                Button(
+                    style = ActionButtonStyle.Filled(
+                        background = orange,
+                        content = Color.Black
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                ActionButton(
+                    text = "Save",
                     onClick = { onSave(key.trim(), alarm) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = orange,
-                        contentColor = Color.Black
-                    )
-                ) { Text("Save") }
+                    style = ActionButtonStyle.Filled(
+                        background = orange,
+                        content = Color.Black
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(Modifier.height(6.dp))
@@ -172,6 +200,69 @@ fun SetupScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 6.dp)
             )
+        }
+    }
+}
+
+/* ---------- Reusable button kao na alertima (podesiv) ---------- */
+
+private sealed class ActionButtonStyle {
+    data class Filled(
+        val background: Color,
+        val content: Color
+    ) : ActionButtonStyle()
+
+    data class Outlined(
+        val borderColor: Color,
+        val textColor: Color
+    ) : ActionButtonStyle()
+}
+
+/**
+ * Jedinstveno mjesto za dimenzije/estetiku (da budu isti kao na alertima).
+ * Podešavaj [height], [corner] i [horizontalPad] po želji.
+ */
+@Composable
+private fun ActionButton(
+    text: String,
+    onClick: () -> Unit,
+    style: ActionButtonStyle,
+    modifier: Modifier = Modifier,
+    height: Dp = 30.dp,                    // manji od prije (nije glomazan)
+    corner: Dp = 16.dp,
+    horizontalPad: Dp = 0.dp
+) {
+    val shape = RoundedCornerShape(corner)
+
+    when (style) {
+        is ActionButtonStyle.Filled -> {
+            Button(
+                onClick = onClick,
+                modifier = modifier
+                    .height(height)
+                    .padding(horizontal = horizontalPad),
+                shape = shape,
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = style.background,
+                    contentColor = style.content
+                )
+            ) { Text(text) }
+        }
+        is ActionButtonStyle.Outlined -> {
+            OutlinedButton(
+                onClick = onClick,
+                modifier = modifier
+                    .height(height)
+                    .padding(horizontal = horizontalPad),
+                shape = shape,
+                border = ButtonDefaults.outlinedButtonBorder(
+                    borderWidth = 2.dp,
+                    borderColor = style.borderColor
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = style.textColor
+                )
+            ) { Text(text) }
         }
     }
 }
