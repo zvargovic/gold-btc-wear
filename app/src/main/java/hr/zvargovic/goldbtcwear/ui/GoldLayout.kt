@@ -58,7 +58,9 @@ fun GoldStaticScreen(
     alerts: List<Double> = emptyList(),       // lista postojećih alerta za popup
     // >>> NOVO: trajni odabir dolazi izvana + callback za spremanje
     selectedAlert: Double? = null,
-    onSelectAlert: (Double?) -> Unit = {}
+    onSelectAlert: (Double?) -> Unit = {},
+    // >>> NOVO: tap na GORNJU libelu -> setup
+    onOpenSetup: () -> Unit = {}
 ) {
     val spotNow = 2315.40
     val premiumPct = 0.0049
@@ -960,6 +962,27 @@ fun GoldStaticScreen(
                 .align(Alignment.BottomCenter)
                 .pointerInput(Unit) { detectTapGestures(onTap = { onOpenAlerts() }) }
         )
+        // === TAP TARGET: desna libela (prebacuje servis) ===
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight(0.6f)        // visina oko libele
+                .width(72.dp)               // širina uz desni rub
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        activeService = if (activeService == PriceService.TwelveData)
+                            PriceService.Yahoo else PriceService.TwelveData
+                    }
+                }
+        )
+        // === NOVO: TAP TARGET: gornjih ~30% ekrana (zona GORNJE libele) otvara Setup ===
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.30f)
+                .align(Alignment.TopCenter)
+                .pointerInput(Unit) { detectTapGestures(onTap = { onOpenSetup() }) }
+        )
 
         // NOVO: POPUP – odabir alerta; spremamo kroz onSelectAlert
         if (showPicker) {
@@ -1054,8 +1077,8 @@ private fun FollowWaterText(
                 }
             )
         }
-        val textW = measurePaint.measureText(text) // <-- ovo postoji
-        val cx = w / 2f                              // <-- i ovo postoji
+        val textW = measurePaint.measureText(text)
+        val cx = w / 2f
 
         val padPx = with(density) { 6.dp.toPx() }
         val left = max(0f, cx - textW / 2f - padPx)
@@ -1155,7 +1178,7 @@ private fun FollowWaterText(
                     x += step
                 }
             }
-            val pm = PathMeasure(path, false)
+            val pm = android.graphics.PathMeasure(path, false)
             val pathLen = pm.length
             val hOff = ((pathLen - textW) / 2f).coerceAtLeast(0f)
             drawIntoCanvas {
