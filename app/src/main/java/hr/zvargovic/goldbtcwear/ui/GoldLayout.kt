@@ -684,7 +684,7 @@ fun GoldStaticScreen(
             fun drawSign(text: String, x: Float, y: Float, deg: Float, paint: android.graphics.Paint) {
                 val fm = paint.fontMetrics
                 val baselineYOffset = - (fm.ascent + fm.descent) / 2f
-                val halfW = paint.measureText(text) / 2f
+                val halfW = paint.measureText(text) / 2f   // <<< OVDJE
                 drawIntoCanvas { c ->
                     val nc = c.nativeCanvas
                     nc.save()
@@ -952,6 +952,30 @@ fun GoldStaticScreen(
             drawCircle(Color.White.copy(alpha = 0.28f), bubbleR, Offset(bx, by))
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
+
+            // === NOVO: path-tekst "Req: 0/800" unutar desne libele (samo za TwelveData) ===
+            if (activeService == PriceService.TwelveData) {
+                val reqText = "Req: 0/800"
+                val txtPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    color = android.graphics.Color.argb(200, 255, 122, 0) // ista narančasta kao gore/dolje
+                    textSize = 10.sp.toPx()
+                    typeface = android.graphics.Typeface.create(
+                        android.graphics.Typeface.DEFAULT,
+                        android.graphics.Typeface.BOLD
+                    )
+                }
+                val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
+                // desna libela koristi luk start..start+span (isti smjer kao gornja)
+                val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
+                val pm = PathMeasure(textPath, false)
+                val textW = txtPaint.measureText(reqText)
+                val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
+                val vOff = 6f // slično gornjoj libeli (RSI) da bude unutar "stakla"
+                drawIntoCanvas { c ->
+                    c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
+                }
+            }
         }
 
         // === TAP TARGET: donjih ~35% ekrana (zona donje libele) otvara Alerts listu ===
