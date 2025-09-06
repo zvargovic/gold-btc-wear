@@ -18,8 +18,9 @@ class SettingsStore(private val context: Context) {
         private val KEY_ALARM = booleanPreferencesKey("alarm_enabled")
     }
 
-    val apiKeyFlow: Flow<String> =
-        context.settingsDataStore.data.map { it[KEY_API] ?: "" }
+    // nullable je praktičnije za provjeru “ima/nema ključa”
+    val apiKeyFlow: Flow<String?> =
+        context.settingsDataStore.data.map { it[KEY_API] }
 
     val alarmEnabledFlow: Flow<Boolean> =
         context.settingsDataStore.data.map { it[KEY_ALARM] ?: false }

@@ -1,5 +1,6 @@
 package hr.zvargovic.goldbtcwear.ui
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
@@ -8,9 +9,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import hr.zvargovic.goldbtcwear.data.AlertsStore
+import hr.zvargovic.goldbtcwear.data.CorrectionStore
 import hr.zvargovic.goldbtcwear.data.SelectedAlertStore
 import hr.zvargovic.goldbtcwear.data.SettingsStore
-import hr.zvargovic.goldbtcwear.data.CorrectionStore
 import hr.zvargovic.goldbtcwear.data.api.YahooService
 import hr.zvargovic.goldbtcwear.presentation.AddAlertScreen
 import hr.zvargovic.goldbtcwear.ui.model.PriceService
@@ -41,7 +42,7 @@ fun AppNavHost() {
     val selectedAlert = remember { mutableStateOf<Double?>(null) }
     var spot by remember { mutableStateOf(2315.40) }         // prikaz u EUR (korigirano)
 
-    // >>> po planu: UI JE UVIJEK YAHOO (TD radi u workeru)
+    // UI uvijek YAHOO (TD radi u workeru)
     val activeService = PriceService.Yahoo
 
     // --- Corr badge state ---
@@ -52,7 +53,7 @@ fun AppNavHost() {
         if (tsMs <= 0L) Long.MAX_VALUE
         else TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis() - tsMs)
 
-    // ----- POČETAK: badge timer + format -----
+    // ----- badge timer + format -----
     var ageMin by remember { mutableStateOf(minutesSince(corrAge)) }
 
     LaunchedEffect(corrAge) {
@@ -70,7 +71,7 @@ fun AppNavHost() {
         val minsText = if (ageMin == Long.MAX_VALUE) "n/a" else "${ageMin}m"
         "${formatK(corrPct)} • $minsText"
     }
-    // ----- KRAJ: badge timer + format -----
+    // ----- /badge timer + format -----
 
     // Učitaj lokalne liste/odabire
     LaunchedEffect(Unit) {
@@ -80,7 +81,7 @@ fun AppNavHost() {
         Log.i(TAG_APP, "init: alerts=${alerts.size}, selected=${selectedAlert.value}")
     }
 
-    // Periodički dohvat cijene SAMO iz Yahoo-a (svakih ~20 s), pa primijeni K
+    // Ticker: Yahoo svake ~20 s, pa primijeni K
     LaunchedEffect(corrPct) {
         Log.i(TAG_APP, "ticker: start Yahoo loop (K=${"%.4f".format(corrPct)})")
         while (true) {
@@ -101,6 +102,9 @@ fun AppNavHost() {
             delay(20_000)
         }
     }
+
+    fun mask(s: String?) = if (s.isNullOrBlank()) "(null)" else
+        s.take(3) + "…" + s.takeLast(minOf(4, s.length))
 
     NavHost(navController = navController, startDestination = "gold") {
 
@@ -170,7 +174,15 @@ fun AppNavHost() {
                 alarmEnabled = false, // isto
                 onBack = { navController.popBackStack() },
                 onSave = { key, alarm ->
-                    scope.launch { settingsStore.saveAll(apiKey = key, alarmEnabled = alarm) }
+                    scope.launch {
+                        // 1) DataStore
+                        settingsStore.saveAll(apiKey = key, alarmEnabled = alarm)
+                        Log.i(TAG_APP, "settings saved -> apiKey=${mask(key)}, alarm=$alarm")
+                        // 2) SharedPrefs za Workera (fallback)
+                        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                            .edit().putString("api_key", key).apply()
+                        Log.i(TAG_APP, "SharedPrefs(settings).api_key = ${mask(key)}")
+                    }
                     navController.popBackStack()
                 }
             )

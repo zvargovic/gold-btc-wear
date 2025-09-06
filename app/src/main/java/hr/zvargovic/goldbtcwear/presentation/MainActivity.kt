@@ -9,7 +9,6 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import hr.zvargovic.goldbtcwear.ui.AppNavHost
-import hr.zvargovic.goldbtcwear.workers.TdCorrWorker
 import java.time.Duration
 
 class MainActivity : ComponentActivity() {
@@ -21,17 +20,9 @@ class MainActivity : ComponentActivity() {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        val work = PeriodicWorkRequestBuilder<TdCorrWorker>(Duration.ofHours(1))
-            .setInitialDelay(Duration.ofMinutes(1))
-            .setConstraints(constraints)
-            .build()
 
-        WorkManager.getInstance(this)
-            .enqueueUniquePeriodicWork(
-                "td-corr-worker",
-                ExistingPeriodicWorkPolicy.UPDATE,
-                work
-            )
+
+
 
         // 2) UI
         setContent { AppNavHost() }
