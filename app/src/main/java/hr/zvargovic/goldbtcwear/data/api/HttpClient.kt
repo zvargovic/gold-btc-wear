@@ -6,21 +6,20 @@ import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 
 object HttpClient {
-
     val client: OkHttpClient by lazy {
-        val builder = OkHttpClient.Builder()
+        OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
-
-        if (BuildConfig.DEBUG) {
-            val logger = HttpLoggingInterceptor { msg ->
-                android.util.Log.d("HTTP", msg)
+            .apply {
+                if (BuildConfig.DEBUG) {
+                    val logger = HttpLoggingInterceptor { msg ->
+                        android.util.Log.d("HTTP", msg)
+                    }
+                    logger.level = HttpLoggingInterceptor.Level.BODY
+                    addInterceptor(logger)
+                }
             }
-            logger.level = HttpLoggingInterceptor.Level.BODY
-            builder.addInterceptor(logger)
-        }
-
-        builder.build()
+            .build()
     }
 }

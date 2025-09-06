@@ -72,4 +72,5 @@ dependencies {
     implementation("com.squareup.moshi:moshi:1.15.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

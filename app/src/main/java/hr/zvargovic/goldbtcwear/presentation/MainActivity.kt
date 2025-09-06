@@ -3,14 +3,37 @@ package hr.zvargovic.goldbtcwear.presentation
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import hr.zvargovic.goldbtcwear.ui.AppNavHost
+import hr.zvargovic.goldbtcwear.workers.TdCorrWorker
+import java.time.Duration
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            // Pokrećemo navigaciju – OVDJE JE KLJUČ!
-            AppNavHost()
-        }
+
+        // 1) Zakazi periodički worker (svakih 1h, mreža potrebna)
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val work = PeriodicWorkRequestBuilder<TdCorrWorker>(Duration.ofHours(1))
+            .setInitialDelay(Duration.ofMinutes(1))
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(this)
+            .enqueueUniquePeriodicWork(
+                "td-corr-worker",
+                ExistingPeriodicWorkPolicy.UPDATE,
+                work
+            )
+
+        // 2) UI
+        setContent { AppNavHost() }
     }
 }

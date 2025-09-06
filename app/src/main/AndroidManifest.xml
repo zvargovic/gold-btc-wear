@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="hr.zvargovic.goldbtcwear">
 
-    <!-- Obavezno za Wear OS app -->
     <uses-feature
         android:name="android.hardware.type.watch"
         android:required="true" />
 
-    <!-- (opcionalno) spriječi spavanje kad je potrebno -->
+    <!-- OBAVEZNO za mrežu -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- (opcionalno) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:label="@string/app_name"
@@ -24,7 +26,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <!-- (opcionalno) za pokretanje iz liste appova na nekim uređajima -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>

@@ -1,10 +1,14 @@
 package hr.zvargovic.goldbtcwear.ui
-
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.animation.core.*
+import androidx.compose.ui.zIndex
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,50 +23,49 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.withFrameNanos
+import androidx.wear.compose.material.Text as WearText
+import hr.zvargovic.goldbtcwear.R
+import hr.zvargovic.goldbtcwear.ui.model.PriceService
 import kotlin.math.*
 import java.util.Locale
-import androidx.compose.runtime.withFrameNanos
-
 import android.graphics.BlurMaskFilter
 import android.graphics.Path as AndroidPath
 import android.graphics.RectF
-import android.graphics.PathMeasure
-
-import androidx.compose.ui.viewinterop.AndroidView
-import android.widget.ImageView
 import android.graphics.drawable.AnimatedImageDrawable
+import android.widget.ImageView
 import androidx.core.content.ContextCompat
-import hr.zvargovic.goldbtcwear.R
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 
-// NOVO: za popup
-import androidx.compose.ui.window.Dialog
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.wear.compose.material.Text as WearText
-
-enum class PriceService { TwelveData, Yahoo }
 private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
 
 @Composable
 fun GoldStaticScreen(
     modifier: Modifier = Modifier,
-    onOpenAlerts: () -> Unit = {},            // ostaje isto (tap zona donje libele)
-    alerts: List<Double> = emptyList(),       // lista postojećih alerta za popup
-    // >>> NOVO: trajni odabir dolazi izvana + callback za spremanje
+    onOpenAlerts: () -> Unit = {},
+    alerts: List<Double> = emptyList(),
     selectedAlert: Double? = null,
     onSelectAlert: (Double?) -> Unit = {},
-    // >>> NOVO: tap na GORNJU libelu -> setup
-    onOpenSetup: () -> Unit = {}
+    onOpenSetup: () -> Unit = {},
+
+    // Živi spot i aktivni servis dolaze izvana
+    spot: Double,
+    activeService: PriceService,
+    onToggleService: () -> Unit,
+
+    // Opcionalni status badge (ako je null/blank -> ne crta se)
+    statusBadge: String? = null
 ) {
-    val spotNow = 2315.40
+    val spotNow = spot
     val premiumPct = 0.0049
     val buy = spotNow * (1 + premiumPct)
     val sell = spotNow * (1 - premiumPct)
@@ -72,7 +75,7 @@ fun GoldStaticScreen(
     // Popup state
     var showPicker by remember { mutableStateOf(false) }
 
-    // >>> NOVO: alertPrice se inicijalizira iz selectedAlert (preživljava restart)
+    // alertPrice se inicijalizira iz selectedAlert (preživljava restart)
     var alertPrice by remember(selectedAlert) { mutableStateOf<Double?>(selectedAlert) }
     val alertWindowEur = 30.0
     val alertHitToleranceEur = 0.10
@@ -93,7 +96,7 @@ fun GoldStaticScreen(
         if (crossed) {
             // “Ispalio” se ovaj alert – očisti i trajno
             alertPrice = null
-            onSelectAlert(null) // >>> NOVO
+            onSelectAlert(null)
         }
     }
 
@@ -197,16 +200,12 @@ fun GoldStaticScreen(
     }
     fun euro(amount: Double): String = "€" + String.format(Locale.US, "%,.2f", amount)
 
-    val infiniteTransition = rememberInfiniteTransition(label = "blink")
-    val blinkAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "blinkAlpha"
-    )
+    // Blink bez animateFloat/LinearEasing — čisto preko sinusa i tAnim
+    val blinkAlpha: Float = run {
+        // ~0.7 Hz treperenje: mapiramo sin u [0.25, 1.0]
+        val s = ((sin(tAnim * 2.0f * Math.PI.toFloat() * 0.7f) + 1f) * 0.5f)
+        0.25f + 0.75f * s
+    }
     val markerAlpha = if (overload) blinkAlpha else 1f
 
     val orangeDim   = Color(0x66FF7A00)
@@ -216,8 +215,6 @@ fun GoldStaticScreen(
 
     val buyTint  = Color(0xFF2FBF6B)
     val sellTint = Color(0xFFE0524D)
-
-    var activeService by remember { mutableStateOf(PriceService.TwelveData) }
 
     val bubbleStep by animateFloatAsState(
         targetValue = if (activeService == PriceService.TwelveData) 5f else -5f,
@@ -238,8 +235,8 @@ fun GoldStaticScreen(
     )
 
     val res = LocalContext.current.resources
-    val iconTop = remember { ImageBitmap.imageResource(res, R.drawable.ic_twelve) }
-    val iconBottom = remember { ImageBitmap.imageResource(res, R.drawable.ic_yahoo) }
+    val iconTop = remember { ImageBitmap.imageResource(res, R.drawable.ic_yahoo) }
+    val iconBottom = remember { ImageBitmap.imageResource(res, R.drawable.ic_twelve) }
 
     // demo RSI kombinacija (anim.)
     val rsiTD = (50f + 25f * sin((tAnim * 0.85f).toDouble()).toFloat()).coerceIn(0f, 100f)
@@ -251,8 +248,7 @@ fun GoldStaticScreen(
         label = "rsiAnimated"
     )
 
-    // ======= CRTANJE – ostaje identično =======
-
+    // ======= CRTANJE =======
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -349,7 +345,6 @@ fun GoldStaticScreen(
                 update = { iv -> (iv.drawable as? AnimatedImageDrawable)?.start() }
             )
         }
-
         // 1b) mjehurići
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
@@ -418,11 +413,17 @@ fun GoldStaticScreen(
                     val aBase = (0.20f * (1f - frac) * VIS)
 
                     drawCircle(Color.White.copy(alpha = (aBase * 0.95f).coerceAtMost(0.85f)), r, c, blendMode = addBlend)
-                    drawCircle(Color.White.copy(alpha = (aBase * 1.2f).coerceAtMost(0.95f)), r * 0.55f,
-                        Offset(c.x + r * 0.38f, c.y - r * 0.40f), blendMode = BlendMode.Plus)
+                    drawCircle(
+                        Color.White.copy(alpha = (aBase * 1.2f).coerceAtMost(0.95f)),
+                        r * 0.55f,
+                        Offset(c.x + r * 0.38f, c.y - r * 0.40f),
+                        blendMode = BlendMode.Plus
+                    )
 
-                    drawCircle(Color.Black.copy(alpha = 0.10f), r * 1.04f, c,
-                        style = Stroke(width = (r * 0.18f).coerceAtLeast(0.6f)))
+                    drawCircle(
+                        Color.Black.copy(alpha = 0.10f), r * 1.04f, c,
+                        style = Stroke(width = (r * 0.18f).coerceAtLeast(0.6f))
+                    )
 
                     if (frac > 0.65f) {
                         val k = ((frac - 0.65f) / 0.35f).coerceIn(0f, 1f)
@@ -460,7 +461,7 @@ fun GoldStaticScreen(
                 val x = cx + rBezel * cos(ang)
                 val y = cy + rBezel * sin(ang)
                 drawCircle(Color(0x55FF7A00), dotR, Offset(x, y))
-                drawCircle(Color(0x88FFC07A), dotR * 0.55f, Offset(x + dotR*dotHi*0.3f, y - dotR*dotHi*0.35f))
+                drawCircle(Color(0x88FFC07A), dotR * 0.55f, Offset(x + dotR * dotHi * 0.3f, y - dotR * dotHi * 0.35f))
             }
             val millis = System.currentTimeMillis()
             val minute = ((millis / 60_000L) % 60).toInt()
@@ -537,7 +538,7 @@ fun GoldStaticScreen(
             val cxT = cx + rText * cos(angRad)
             val cyT = cy + rText * sin(angRad)
             val fm = txtPaint.fontMetrics
-            val baselineYOffset = - (fm.ascent + fm.descent) / 2f
+            val baselineYOffset = -(fm.ascent + fm.descent) / 2f
             val halfTextW = txtPaint.measureText(txt) / 2f
             drawIntoCanvas { c ->
                 c.save()
@@ -586,6 +587,7 @@ fun GoldStaticScreen(
                         detectTapGestures(onTap = { showPicker = true })
                     }
                 )
+
             }
             Spacer(Modifier.height(22.dp))
             Column(
@@ -684,7 +686,7 @@ fun GoldStaticScreen(
             fun drawSign(text: String, x: Float, y: Float, deg: Float, paint: android.graphics.Paint) {
                 val fm = paint.fontMetrics
                 val baselineYOffset = - (fm.ascent + fm.descent) / 2f
-                val halfW = paint.measureText(text) / 2f   // <<< OVDJE
+                val halfW = paint.measureText(text) / 2f
                 drawIntoCanvas { c ->
                     val nc = c.nativeCanvas
                     nc.save()
@@ -696,7 +698,7 @@ fun GoldStaticScreen(
             val startDeg = start
             val endDeg = start + span
             drawSign("–", sx, sy, startDeg, minusPaint)
-            drawSign("+", ex, ey, endDeg,  plusPaint)
+            drawSign("+", ex, ey, endDeg, plusPaint)
 
             if (alertPrice != null) {
                 val txt = euro(alertPrice!!)
@@ -713,7 +715,7 @@ fun GoldStaticScreen(
                 val textPath = AndroidPath().apply {
                     addArc(arcRect, start + span, -span)
                 }
-                val pm = PathMeasure(textPath, false)
+                val pm = android.graphics.PathMeasure(textPath, false)
                 val textW = txtPaint.measureText(txt)
                 val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
                 val vOff = 8f
@@ -791,7 +793,7 @@ fun GoldStaticScreen(
             }
             fun drawSign(text: String, x: Float, y: Float, deg: Float, paint: android.graphics.Paint) {
                 val fm = paint.fontMetrics
-                val baselineYOffset = - (fm.ascent + fm.descent) / 2f
+                val baselineYOffset = -(fm.ascent + fm.descent) / 2f
                 val halfW = paint.measureText(text) / 2f
                 drawIntoCanvas { c ->
                     val nc = c.nativeCanvas
@@ -819,7 +821,7 @@ fun GoldStaticScreen(
 
             val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
             val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
-            val pm = PathMeasure(textPath, false)
+            val pm = android.graphics.PathMeasure(textPath, false)
             val textW = txtPaint.measureText(rsiText)
             val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
             val vOff = 30f
@@ -917,6 +919,7 @@ fun GoldStaticScreen(
             val ex = cx + tubeR * cos(endRad)
             val ey = cy + tubeR * sin(endRad)
 
+
             val iconSize = (11.sp.toPx() * 1.25f).roundToInt()
             val srcTop = IntSize(iconTop.width, iconTop.height)
             val srcBot = IntSize(iconBottom.width, iconBottom.height)
@@ -953,12 +956,12 @@ fun GoldStaticScreen(
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
 
-            // === NOVO: path-tekst "Req: 0/800" unutar desne libele (samo za TwelveData) ===
+            // path-tekst "Req: 0/800" unutar desne libele (samo za TwelveData)
             if (activeService == PriceService.TwelveData) {
                 val reqText = "Req: 0/800"
                 val txtPaint = android.graphics.Paint().apply {
                     isAntiAlias = true
-                    color = android.graphics.Color.argb(200, 255, 122, 0) // ista narančasta kao gore/dolje
+                    color = android.graphics.Color.argb(200, 255, 122, 0)
                     textSize = 10.sp.toPx()
                     typeface = android.graphics.Typeface.create(
                         android.graphics.Typeface.DEFAULT,
@@ -966,19 +969,32 @@ fun GoldStaticScreen(
                     )
                 }
                 val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
-                // desna libela koristi luk start..start+span (isti smjer kao gornja)
                 val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
-                val pm = PathMeasure(textPath, false)
+                val pm = android.graphics.PathMeasure(textPath, false)
                 val textW = txtPaint.measureText(reqText)
                 val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
-                val vOff = 6f // slično gornjoj libeli (RSI) da bude unutar "stakla"
+                val vOff = 6f
                 drawIntoCanvas { c ->
                     c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
                 }
+
+            }
+
+        }
+
+        // === OVERLAY BADGE ispod SPOT-a (ne mijenja layout) ===
+        if (!statusBadge.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)   // centar ekrana (isti kao SPOT)
+                    .offset(y = (-2).dp)      // fin pomak: -44.dp (više), -28.dp (niže)
+                    .zIndex(2f)
+            ) {
+                StatusBadge(statusBadge!!)
             }
         }
 
-        // === TAP TARGET: donjih ~35% ekrana (zona donje libele) otvara Alerts listu ===
+        // TAP TARGET: donjih ~35% ekrana (otvara Alerts listu)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -986,20 +1002,19 @@ fun GoldStaticScreen(
                 .align(Alignment.BottomCenter)
                 .pointerInput(Unit) { detectTapGestures(onTap = { onOpenAlerts() }) }
         )
-        // === TAP TARGET: desna libela (prebacuje servis) ===
+
+        // TAP TARGET: desna libela (prebacuje servis)
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .fillMaxHeight(0.6f)        // visina oko libele
-                .width(72.dp)               // širina uz desni rub
+                .fillMaxHeight(0.6f)
+                .width(72.dp)
                 .pointerInput(Unit) {
-                    detectTapGestures {
-                        activeService = if (activeService == PriceService.TwelveData)
-                            PriceService.Yahoo else PriceService.TwelveData
-                    }
+                    detectTapGestures { onToggleService() }
                 }
         )
-        // === NOVO: TAP TARGET: gornjih ~30% ekrana (zona GORNJE libele) otvara Setup ===
+
+        // TAP TARGET: gornjih ~30% ekrana (otvara Setup)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1008,14 +1023,14 @@ fun GoldStaticScreen(
                 .pointerInput(Unit) { detectTapGestures(onTap = { onOpenSetup() }) }
         )
 
-        // NOVO: POPUP – odabir alerta; spremamo kroz onSelectAlert
+        // POPUP – odabir alerta; spremamo kroz onSelectAlert
         if (showPicker) {
             AlertPickerDialog(
                 alerts = alerts,
                 spot = spotNow,
                 onSelect = { chosen ->
                     alertPrice = chosen
-                    onSelectAlert(chosen)   // <<< NOVO: trajno spremanje
+                    onSelectAlert(chosen)
                     showPicker = false
                 },
                 onDismiss = { showPicker = false }
@@ -1023,7 +1038,6 @@ fun GoldStaticScreen(
         }
     }
 }
-
 /* ---------- FollowWaterText (ostaje tvoja verzija) ---------- */
 @Composable
 private fun FollowWaterText(
@@ -1212,6 +1226,7 @@ private fun FollowWaterText(
         }
     }
 }
+
 /* ---------- POPUP: AlertPickerDialog ---------- */
 @Composable
 private fun AlertPickerDialog(
@@ -1290,5 +1305,21 @@ private fun AlertPickerDialog(
                 }
             }
         }
+    }
+}
+
+/* ---------- NOVO: StatusBadge ---------- */
+@Composable
+private fun StatusBadge(text: String) {
+    Box(
+        modifier = Modifier
+            .background(Color(0xFF333333), RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        WearText(
+            text = text,
+            color = Color.White,
+            fontSize = 10.sp
+        )
     }
 }
