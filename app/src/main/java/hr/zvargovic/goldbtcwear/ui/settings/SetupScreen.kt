@@ -37,7 +37,6 @@ fun SetupScreen(
 
     val focusRequester = remember { FocusRequester() }
 
-    // Paleta iz aplikacije
     val orange      = Color(0xFFFF7A00)
     val orangeLite  = Color(0xFFFFA040)
     val warmWhite   = Color(0xFFDCD3C8)
@@ -58,7 +57,6 @@ fun SetupScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Naslov
             Text(
                 text = "Setup",
                 color = orange,
@@ -67,7 +65,6 @@ fun SetupScreen(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            // Labela
             Text(
                 text = "TwelveData API ključ",
                 color = warmWhite,
@@ -75,7 +72,6 @@ fun SetupScreen(
                 modifier = Modifier.padding(bottom = 6.dp)
             )
 
-            // --- BasicTextField (umjesto TextField) ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -109,7 +105,6 @@ fun SetupScreen(
 
             Spacer(Modifier.height(6.dp))
 
-            // CTA za “Use phone keyboard”
             Chip(
                 onClick = { focusRequester.requestFocus() },
                 label = { Text("Unesi na mobitelu") },
@@ -122,7 +117,6 @@ fun SetupScreen(
 
             Spacer(Modifier.height(6.dp))
 
-            // Pokaži / sakrij ključ — narančasti gradient kada je checked
             ToggleChip(
                 checked = showKey,
                 onCheckedChange = { checked -> showKey = checked },
@@ -130,12 +124,10 @@ fun SetupScreen(
                 toggleControl = { Switch(checked = showKey) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ToggleChipDefaults.toggleChipColors(
-                    // UNCHECKED (sivo)
                     uncheckedStartBackgroundColor = chipBg,
                     uncheckedEndBackgroundColor = chipBg,
                     uncheckedContentColor = warmWhite,
                     uncheckedToggleControlColor = warmWhite,
-                    // CHECKED (narančasti gradient)
                     checkedStartBackgroundColor = orange,
                     checkedEndBackgroundColor = orangeLite,
                     checkedContentColor = Color.Black,
@@ -145,7 +137,6 @@ fun SetupScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // Alarm switch — isti narančasti gradient u checked stanju
             ToggleChip(
                 checked = alarm,
                 onCheckedChange = { checked -> alarm = checked },
@@ -166,7 +157,6 @@ fun SetupScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // Akcijski gumbi – “ista metoda” kao na alertima (podesivi)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -204,36 +194,22 @@ fun SetupScreen(
     }
 }
 
-/* ---------- Reusable button kao na alertima (podesiv) ---------- */
-
 private sealed class ActionButtonStyle {
-    data class Filled(
-        val background: Color,
-        val content: Color
-    ) : ActionButtonStyle()
-
-    data class Outlined(
-        val borderColor: Color,
-        val textColor: Color
-    ) : ActionButtonStyle()
+    data class Filled(val background: Color, val content: Color) : ActionButtonStyle()
+    data class Outlined(val borderColor: Color, val textColor: Color) : ActionButtonStyle()
 }
 
-/**
- * Jedinstveno mjesto za dimenzije/estetiku (da budu isti kao na alertima).
- * Podešavaj [height], [corner] i [horizontalPad] po želji.
- */
 @Composable
 private fun ActionButton(
     text: String,
     onClick: () -> Unit,
     style: ActionButtonStyle,
     modifier: Modifier = Modifier,
-    height: Dp = 30.dp,                    // manji od prije (nije glomazan)
+    height: Dp = 30.dp,
     corner: Dp = 16.dp,
     horizontalPad: Dp = 0.dp
 ) {
     val shape = RoundedCornerShape(corner)
-
     when (style) {
         is ActionButtonStyle.Filled -> {
             Button(

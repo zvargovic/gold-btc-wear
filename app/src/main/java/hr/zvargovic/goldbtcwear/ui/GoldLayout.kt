@@ -63,7 +63,10 @@ fun GoldStaticScreen(
     onToggleService: () -> Unit,
 
     // Opcionalni status badge (ako je null/blank -> ne crta se)
-    statusBadge: String? = null
+    statusBadge: String? = null,
+    // [NOVO] za “Req: used/limit” u desnoj libeli
+    reqUsedThisMonth: Int,
+    reqMonthlyQuota: Int
 ) {
     val spotNow = spot
     val premiumPct = 0.0049
@@ -956,29 +959,28 @@ fun GoldStaticScreen(
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
 
-            // path-tekst "Req: 0/800" unutar desne libele (samo za TwelveData)
-            if (activeService == PriceService.TwelveData) {
-                val reqText = "Req: 0/800"
-                val txtPaint = android.graphics.Paint().apply {
-                    isAntiAlias = true
-                    color = android.graphics.Color.argb(200, 255, 122, 0)
-                    textSize = 10.sp.toPx()
-                    typeface = android.graphics.Typeface.create(
-                        android.graphics.Typeface.DEFAULT,
-                        android.graphics.Typeface.BOLD
-                    )
+                // [IZMJENA] path-tekst "Req: N/800" — uvijek vidljiv (neovisno o servisu)
+                run {
+                    val reqText = "Req: ${reqUsedThisMonth}/${reqMonthlyQuota}"
+                    val txtPaint = android.graphics.Paint().apply {
+                        isAntiAlias = true
+                        color = android.graphics.Color.argb(200, 255, 122, 0)
+                        textSize = 10.sp.toPx()
+                        typeface = android.graphics.Typeface.create(
+                            android.graphics.Typeface.DEFAULT,
+                            android.graphics.Typeface.BOLD
+                        )
+                    }
+                    val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
+                    val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
+                    val pm = android.graphics.PathMeasure(textPath, false)
+                    val textW = txtPaint.measureText(reqText)
+                    val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
+                    val vOff = 6f
+                    drawIntoCanvas { c ->
+                        c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
+                    }
                 }
-                val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
-                val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
-                val pm = android.graphics.PathMeasure(textPath, false)
-                val textW = txtPaint.measureText(reqText)
-                val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
-                val vOff = 6f
-                drawIntoCanvas { c ->
-                    c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
-                }
-
-            }
 
         }
 

@@ -1,5 +1,6 @@
 package hr.zvargovic.goldbtcwear.data.api
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -14,6 +15,8 @@ import org.json.JSONObject
  */
 class YahooService {
 
+    private val tag = "YAPI"
+
     suspend fun getGoldFutureUsd(): Result<Double> = withContext(Dispatchers.IO) {
         runCatching {
             val url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
@@ -21,7 +24,9 @@ class YahooService {
             HttpClient.client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 val body = resp.body?.string() ?: error("Empty body")
-                parseRegularMarketPriceFromChart(body)
+                val v = parseRegularMarketPriceFromChart(body)
+                Log.d(tag, "GC=F USD/oz = $v")
+                v
             }
         }
     }
@@ -33,7 +38,9 @@ class YahooService {
             HttpClient.client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 val body = resp.body?.string() ?: error("Empty body")
-                parseRegularMarketPriceFromChart(body)
+                val v = parseRegularMarketPriceFromChart(body)
+                Log.d(tag, "EURUSD=X USD per EUR = $v")
+                v
             }
         }
     }
@@ -45,7 +52,9 @@ class YahooService {
         if (!fut.isFinite() || !eurusd.isFinite() || eurusd <= 0.0) {
             return@withContext Result.failure(IllegalStateException("Bad data"))
         }
-        Result.success(fut / eurusd)
+        val eur = fut / eurusd
+        Log.i(tag, "GC=F=${"%.2f".format(fut)}  EURUSD=X=${"%.6f".format(eurusd)}  => XAU/EUR=${"%.2f".format(eur)}")
+        Result.success(eur)
     }
 
     private fun parseRegularMarketPriceFromChart(body: String): Double {
