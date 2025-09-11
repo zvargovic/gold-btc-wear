@@ -65,6 +65,9 @@ fun GoldStaticScreen(
     // [SPOTSTORE] Referentni spot za točan % (ako je null, kao fallback koristimo trenutni spot)
     refSpot: Double?,
 
+    // RSI vrijednost (0–100) koja dolazi izvana; ako je null, koristimo fallback animaciju
+    rsi: Float? = null,
+
     // Desna libela — req counter (ostaje)
     reqUsedThisMonth: Int,
     reqMonthlyQuota: Int,
@@ -257,12 +260,16 @@ fun GoldStaticScreen(
     val iconTop = remember { ImageBitmap.imageResource(res, R.drawable.ic_yahoo) }
     val iconBottom = remember { ImageBitmap.imageResource(res, R.drawable.ic_twelve) }
 
-    // demo RSI kombinacija (anim.)
-    val rsiTD = (50f + 25f * sin((tAnim * 0.85f).toDouble()).toFloat()).coerceIn(0f, 100f)
-    val rsiYahoo = (50f + 25f * sin((tAnim * 0.65f + 1.1f).toDouble()).toFloat()).coerceIn(0f, 100f)
-    val rsiCombinedTarget = ((rsiTD + rsiYahoo) * 0.5f).coerceIn(0f, 100f)
+    // === RSI ===
+    // Ako je `rsi` proslijeđen izvana (0..100), animiramo se prema njemu.
+    // Inače, koristimo blagi fallback (sine) kako UI ne bi bio prazan.
+    val fallbackRsiTD = (50f + 25f * sin((tAnim * 0.85f).toDouble()).toFloat()).coerceIn(0f, 100f)
+    val fallbackRsiYahoo = (50f + 25f * sin((tAnim * 0.65f + 1.1f).toDouble()).toFloat()).coerceIn(0f, 100f)
+    val fallbackRsi = ((fallbackRsiTD + fallbackRsiYahoo) * 0.5f).coerceIn(0f, 100f)
+
+    val rsiTarget = (rsi ?: fallbackRsi).coerceIn(0f, 100f)
     val rsiAnimated by animateFloatAsState(
-        targetValue = rsiCombinedTarget,
+        targetValue = rsiTarget,
         animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
         label = "rsiAnimated"
     )
