@@ -62,18 +62,31 @@ fun GoldStaticScreen(
     activeService: PriceService,
     onToggleService: () -> Unit,
 
-    // Opcionalni status badge (ako je null/blank -> ne crta se)
-    statusBadge: String? = null,
-    // [NOVO] za “Req: used/limit” u desnoj libeli
+    // [SPOTSTORE] Referentni spot za točan % (ako je null, kao fallback koristimo trenutni spot)
+    refSpot: Double?,
+
+    // Desna libela — req counter (ostaje)
     reqUsedThisMonth: Int,
-    reqMonthlyQuota: Int
+    reqMonthlyQuota: Int,
+
+    // === ETA mjehurić ===
+    etaHourMarkerColor: Color = Color(0xFFFF7A00),
+    showEtaHourMarker: Boolean = true,
+
+    // === K-faktor labela na suprotnoj strani lijeve skale ===
+    kFactorPct: Double = 0.0,
+    kTextExtraStep: Int = +8,
+    kTextRadialOffsetPx: Float = 50f,
+    kTextTangentOffsetPx: Float = 20f,
+    kTextNormalOffsetPx: Float = 0f,
 ) {
     val spotNow = spot
     val premiumPct = 0.0049
     val buy = spotNow * (1 + premiumPct)
     val sell = spotNow * (1 - premiumPct)
 
-    val lastRequestPrice = 2312.0
+    // [REMOVED] lastRequestPrice — više se ne koristi
+    // val lastRequestPrice = 2312.0
 
     // Popup state
     var showPicker by remember { mutableStateOf(false) }
@@ -97,7 +110,6 @@ fun GoldStaticScreen(
             else -> spotNow <= ap || closeEnough
         }
         if (crossed) {
-            // “Ispalio” se ovaj alert – očisti i trajno
             alertPrice = null
             onSelectAlert(null)
         }
@@ -190,12 +202,17 @@ fun GoldStaticScreen(
 
     fun waterLevelRatio(): Float = (yWaterPxForDrawing / screenH).coerceIn(0f, 1f)
 
-    val deltaHr = if (lastRequestPrice > 0) (spotNow - lastRequestPrice) / lastRequestPrice else 0.0
+    // === TOČAN POSTOTAK PREMA refSpot ===
+    val ref = refSpot ?: spotNow
+    val deltaPctContinuous: Double =
+        if (ref > 0.0) (spotNow - ref) / ref else 0.0
+
+    // Tikovi za marker (vizualni pokazivač i “overload” blink > ±0.5%)
     val tick = 0.001
     val maxTicks = 5
-    val rawSteps = (deltaHr / tick).roundToInt()
+    val rawSteps = (deltaPctContinuous / tick).roundToInt()
     val steps = rawSteps.coerceIn(-maxTicks, maxTicks)
-    val overload = abs(deltaHr) > maxTicks * tick
+    val overload = abs(deltaPctContinuous) > maxTicks * tick
 
     fun pctStr(p: Double): String {
         val sign = if (p >= 0) "+" else ""
@@ -205,7 +222,6 @@ fun GoldStaticScreen(
 
     // Blink bez animateFloat/LinearEasing — čisto preko sinusa i tAnim
     val blinkAlpha: Float = run {
-        // ~0.7 Hz treperenje: mapiramo sin u [0.25, 1.0]
         val s = ((sin(tAnim * 2.0f * Math.PI.toFloat() * 0.7f) + 1f) * 0.5f)
         0.25f + 0.75f * s
     }
@@ -250,7 +266,6 @@ fun GoldStaticScreen(
         animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
         label = "rsiAnimated"
     )
-
     // ======= CRTANJE =======
     Box(
         modifier = modifier
@@ -449,7 +464,6 @@ fun GoldStaticScreen(
                 x += stepX
             }
         }
-
         // 2) minutni krug
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
@@ -466,7 +480,19 @@ fun GoldStaticScreen(
                 drawCircle(Color(0x55FF7A00), dotR, Offset(x, y))
                 drawCircle(Color(0x88FFC07A), dotR * 0.55f, Offset(x + dotR * dotHi * 0.3f, y - dotR * dotHi * 0.35f))
             }
+
             val millis = System.currentTimeMillis()
+
+            if (showEtaHourMarker) {
+                val hour = ((millis / 3_600_000L) % 12).toInt()
+                val hourIndex = hour * 5
+                val hDeg = hourIndex * 6f - 90f
+                val hRad = Math.toRadians(hDeg.toDouble()).toFloat()
+                val hx = cx + rBezel * cos(hRad)
+                val hy = cy + rBezel * sin(hRad)
+                drawCircle(etaHourMarkerColor, dotR * 0.55f, Offset(hx + dotR * dotHi * 0.3f, hy - dotR * dotHi * 0.35f))
+            }
+
             val minute = ((millis / 60_000L) % 60).toInt()
             val angDeg = minute * 6f - 90f
             val angRad = Math.toRadians(angDeg.toDouble()).toFloat()
@@ -518,7 +544,8 @@ fun GoldStaticScreen(
                 cap = StrokeCap.Round
             )
 
-            val showPct = if (overload) (spotNow - lastRequestPrice) / lastRequestPrice else markerSteps * tick.toDouble()
+            // === PRIKAZ POSTOTKA: točno prema refSpot (kontinuiran), ne “steppan” ===
+            val showPct = deltaPctContinuous
             val txt = pctStr(showPct)
             val baseLabelColor = if (showPct >= 0) buyTint else sellTint
             val softLabel = androidx.compose.ui.graphics.lerp(warmWhite, baseLabelColor, 0.55f)
@@ -534,7 +561,7 @@ fun GoldStaticScreen(
                     android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD
                 )
             }
-            val extraStep = -7
+            val extraStep = -8
             val txtAng = start + (extraStep + maxTicks) * stepAng
             val angRad = Math.toRadians(txtAng.toDouble()).toFloat()
             val rText = (inner + outer) / 2f
@@ -549,6 +576,59 @@ fun GoldStaticScreen(
                 c.rotate(txtAng + 270f)
                 c.nativeCanvas.drawText(txt, -halfTextW, baselineYOffset, txtPaint)
                 c.restore()
+            }
+
+            // --- K-FAKTOR: tekst po LUKU (prati obod) ---
+            run {
+                val kTxt = String.format(
+                    Locale.US,
+                    if (kFactorPct >= 0) "K:+%.2f%%" else "K:%.2f%%",
+                    kFactorPct * 100.0
+                )
+
+                val kPaint = android.graphics.Paint(txtPaint).apply {
+                    color = android.graphics.Color.argb(
+                        (orangeLine.alpha * 255).roundToInt(),
+                        (orangeLine.red * 255).roundToInt(),
+                        (orangeLine.green * 255).roundToInt(),
+                        (orangeLine.blue * 255).roundToInt()
+                    )
+                    alpha = (0.95f * 255).toInt()
+                }
+
+                // kut na kojem želimo CENTAR teksta
+                val kAngCenter = start + (kTextExtraStep + maxTicks) * stepAng
+                val kRad = Math.toRadians(kAngCenter.toDouble()).toFloat()
+
+                // polumjer (uz tvoj radijalni offset)
+                val kR = (inner + outer) / 2.08f + kTextRadialOffsetPx
+
+                // (prije računanja širine) – razmak slova
+                kPaint.letterSpacing = 0.03f
+
+                // 1) širina + malo “lufta” da se ne sudara rub
+                val padPx = 6f
+                val textW = kPaint.measureText(kTxt) + padPx
+
+                // 2) sweep iz duljine
+                val circumference = (2f * Math.PI.toFloat() * kR)
+                val textSweepDeg = (textW / circumference) * 360f
+
+                // 3) arc na kojem pišemo
+                val arcStartDeg = kAngCenter - textSweepDeg / 2f
+                val arcSweepDeg = textSweepDeg
+                val arcRect = RectF(cx - kR, cy - kR, cx + kR, cy + kR)
+                val path = AndroidPath().apply { addArc(arcRect, arcStartDeg, arcSweepDeg) }
+
+                // 4) offseti
+                val pm = android.graphics.PathMeasure(path, false)
+                val hOff = (pm.length - textW) / 2f + kTextTangentOffsetPx
+                val vOff = kTextNormalOffsetPx
+                kPaint.textSize = kPaint.textSize * 0.95f
+
+                drawIntoCanvas { c ->
+                    c.nativeCanvas.drawTextOnPath(kTxt, path, hOff, vOff, kPaint)
+                }
             }
         }
 
@@ -590,7 +670,6 @@ fun GoldStaticScreen(
                         detectTapGestures(onTap = { showPicker = true })
                     }
                 )
-
             }
             Spacer(Modifier.height(22.dp))
             Column(
@@ -922,7 +1001,6 @@ fun GoldStaticScreen(
             val ex = cx + tubeR * cos(endRad)
             val ey = cy + tubeR * sin(endRad)
 
-
             val iconSize = (11.sp.toPx() * 1.25f).roundToInt()
             val srcTop = IntSize(iconTop.width, iconTop.height)
             val srcBot = IntSize(iconBottom.width, iconBottom.height)
@@ -955,44 +1033,31 @@ fun GoldStaticScreen(
             val bx = cx + tubeR * cos(bRad)
             val by = cy + tubeR * sin(bRad)
             val bubbleR = tubeWidth * 0.40f
+
             drawCircle(Color.White.copy(alpha = 0.28f), bubbleR, Offset(bx, by))
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
-
-                // [IZMJENA] path-tekst "Req: N/800" — uvijek vidljiv (neovisno o servisu)
-                run {
-                    val reqText = "Req: ${reqUsedThisMonth}/${reqMonthlyQuota}"
-                    val txtPaint = android.graphics.Paint().apply {
-                        isAntiAlias = true
-                        color = android.graphics.Color.argb(200, 255, 122, 0)
-                        textSize = 10.sp.toPx()
-                        typeface = android.graphics.Typeface.create(
-                            android.graphics.Typeface.DEFAULT,
-                            android.graphics.Typeface.BOLD
-                        )
-                    }
-                    val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
-                    val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
-                    val pm = android.graphics.PathMeasure(textPath, false)
-                    val textW = txtPaint.measureText(reqText)
-                    val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
-                    val vOff = 6f
-                    drawIntoCanvas { c ->
-                        c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
-                    }
+            // path-tekst "Req: N/800"
+            run {
+                val reqText = "Req: ${reqUsedThisMonth}/${reqMonthlyQuota}"
+                val txtPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    color = android.graphics.Color.argb(200, 255, 122, 0)
+                    textSize = 10.sp.toPx()
+                    typeface = android.graphics.Typeface.create(
+                        android.graphics.Typeface.DEFAULT,
+                        android.graphics.Typeface.BOLD
+                    )
                 }
-
-        }
-
-        // === OVERLAY BADGE ispod SPOT-a (ne mijenja layout) ===
-        if (!statusBadge.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)   // centar ekrana (isti kao SPOT)
-                    .offset(y = (-2).dp)      // fin pomak: -44.dp (više), -28.dp (niže)
-                    .zIndex(2f)
-            ) {
-                StatusBadge(statusBadge!!)
+                val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
+                val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
+                val pm = android.graphics.PathMeasure(textPath, false)
+                val textW = txtPaint.measureText(reqText)
+                val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
+                val vOff = 6f
+                drawIntoCanvas { c ->
+                    c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
+                }
             }
         }
 
@@ -1040,7 +1105,8 @@ fun GoldStaticScreen(
         }
     }
 }
-/* ---------- FollowWaterText (ostaje tvoja verzija) ---------- */
+
+/* ---------- FollowWaterText ---------- */
 @Composable
 private fun FollowWaterText(
     id: String,
@@ -1228,7 +1294,6 @@ private fun FollowWaterText(
         }
     }
 }
-
 /* ---------- POPUP: AlertPickerDialog ---------- */
 @Composable
 private fun AlertPickerDialog(
@@ -1310,7 +1375,7 @@ private fun AlertPickerDialog(
     }
 }
 
-/* ---------- NOVO: StatusBadge ---------- */
+/* ---------- StatusBadge (više se ne koristi) ---------- */
 @Composable
 private fun StatusBadge(text: String) {
     Box(
