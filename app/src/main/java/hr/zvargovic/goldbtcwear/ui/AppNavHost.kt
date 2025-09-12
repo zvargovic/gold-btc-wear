@@ -1,14 +1,25 @@
 package hr.zvargovic.goldbtcwear.ui
 
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import hr.zvargovic.goldbtcwear.R
 import hr.zvargovic.goldbtcwear.data.*
 import hr.zvargovic.goldbtcwear.data.api.YahooService
 import hr.zvargovic.goldbtcwear.presentation.AddAlertScreen
+import hr.zvargovic.goldbtcwear.presentation.MainActivity
 import hr.zvargovic.goldbtcwear.ui.model.PriceService
 import hr.zvargovic.goldbtcwear.ui.settings.SetupScreen
 import hr.zvargovic.goldbtcwear.workers.TdCorrWorker
@@ -17,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 private const val TAG_APP = "APP"
+private const val CHANNEL_ALERTS = "alerts"
 
 @Composable
 fun AppNavHost() {
@@ -123,6 +135,64 @@ fun AppNavHost() {
         }
     }
 
+    // Helperi: vibracija + notifikacija
+    fun vibrateStrong(context: Context) {
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vm.defaultVibrator.vibrate(
+                    VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 350, 120, 350), -1)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= 26) {
+                    vib.vibrate(
+                        VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 350, 120, 350), -1)
+                    )
+                } else {
+                    @Suppress("DEPRECATION") vib.vibrate(600)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG_APP, "vibrate failed: ${t.message}")
+        }
+    }
+
+    fun postAlertNotification(context: Context, hitAt: Double, current: Double) {
+        val openIntent = Intent(context, MainActivity::class.java)
+        val flags = if (Build.VERSION.SDK_INT >= 23)
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        else PendingIntent.FLAG_UPDATE_CURRENT
+        val pi = PendingIntent.getActivity(context, 1001, openIntent, flags)
+
+        val title = context.getString(R.string.app_name)
+        val text = "Alert hit @ €${"%,.2f".format(hitAt)} (spot €${"%,.2f".format(current)})"
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+            .setSmallIcon(R.mipmap.ic_launcher) // postoji svugdje
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+        try {
+            with(NotificationManagerCompat.from(context)) {
+                notify(2001, builder.build())
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG_APP, "notify failed: ${t.message}")
+        }
+    }
+
+    fun triggerAlertHit(context: Context, previousSelected: Double?, currentSpot: Double) {
+        Log.i(TAG_APP, "ALERT HIT -> prev=$previousSelected spot=${"%.2f".format(currentSpot)}")
+        vibrateStrong(context)
+        postAlertNotification(context, previousSelected ?: currentSpot, currentSpot)
+    }
+
     NavHost(navController = navController, startDestination = "gold") {
         composable("gold") {
             GoldStaticScreen(
@@ -132,35 +202,30 @@ fun AppNavHost() {
                 alerts = alerts,
                 selectedAlert = selectedAlert.value,
                 onSelectAlert = { v ->
+                    val prev = selectedAlert.value
                     selectedAlert.value = v
                     scope.launch { selectedStore.save(v) }
+                    if (prev != null && v == null) {
+                        triggerAlertHit(ctx, prev, spot)
+                    }
                 },
 
                 spot = spot,
-                activeService = activeService,
-                onToggleService = {
-                    Log.i(TAG_APP, "toggle ignored (TD u workeru, UI = Yahoo×K)")
-                },
+                activeService = PriceService.Yahoo,
+                onToggleService = { Log.i(TAG_APP, "toggle ignored (TD u workeru, UI = Yahoo×K)") },
 
-                // Referentni spot za postotak
                 refSpot = refSpot,
-
-                // *** PROSLJEĐUJEMO REALNI RSI ***
                 rsi = rsi,
 
-                // === OVO JE KLJUČ ZA TVOJ ERROR ===
-                // GoldStaticScreen trenutno očekuje onSetRefSpot -> postavi ref na trenutačni spot
                 onSetRefSpot = {
                     val v = spot
                     scope.launch { spotStore.setRef(v) }
                     Log.i(TAG_APP, "Ref reset to current spot=${"%.2f".format(v)}")
                 },
 
-                // Desna libela: dnevni req counter
                 reqUsedThisMonth = dayUsed,
                 reqMonthlyQuota = reqLimit,
 
-                // K-faktor
                 kFactorPct = corrPct,
                 kTextExtraStep = +8,
                 kTextRadialOffsetPx = 0f

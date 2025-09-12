@@ -6,12 +6,14 @@
         android:name="android.hardware.type.watch"
         android:required="true" />
 
-    <!-- OBAVEZNO za mrežu -->
+    <!-- Mreža -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- (opcionalno) -->
+    <!-- Vibracija / notifikacije -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Android 13+ runtime permission za notifikacije -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".GoldApp"
@@ -19,7 +21,9 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:supportsRtl="true">
-
+        <receiver
+            android:name="hr.zvargovic.goldbtcwear.alert.AlertStopReceiver"
+            android:exported="true" />
         <activity
             android:name="hr.zvargovic.goldbtcwear.presentation.MainActivity"
             android:exported="true"

@@ -1,30 +1,36 @@
 package hr.zvargovic.goldbtcwear.presentation
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
+import androidx.core.content.getSystemService
 import hr.zvargovic.goldbtcwear.ui.AppNavHost
-import java.time.Duration
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1) Zakazi periodički worker (svakih 1h, mreža potrebna)
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+        createNotificationChannel()
 
-
-
-
-
-        // 2) UI
         setContent { AppNavHost() }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelId = "alerts"
+            val name = "Price alerts"
+            val desc = "Alert when target price is hit"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(channelId, name, importance).apply {
+                description = desc
+                enableVibration(true)
+                setShowBadge(true)
+            }
+            val nm: NotificationManager? = getSystemService()
+            nm?.createNotificationChannel(channel)
+        }
     }
 }
