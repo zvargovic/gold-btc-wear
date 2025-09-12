@@ -61,6 +61,7 @@ fun GoldStaticScreen(
     spot: Double,
     activeService: PriceService,
     onToggleService: () -> Unit,
+    onSetRefSpot: () -> Unit,
 
     // [SPOTSTORE] Referentni spot za točan % (ako je null, kao fallback koristimo trenutni spot)
     refSpot: Double?,
@@ -205,10 +206,20 @@ fun GoldStaticScreen(
 
     fun waterLevelRatio(): Float = (yWaterPxForDrawing / screenH).coerceIn(0f, 1f)
 
-    // === TOČAN POSTOTAK PREMA refSpot ===
-    val ref = refSpot ?: spotNow
-    val deltaPctContinuous: Double =
-        if (ref > 0.0) (spotNow - ref) / ref else 0.0
+    // === TOČAN POSTOTAK PREMA refSpot (+zaštita) ===
+    val ref = refSpot?.takeIf { it.isFinite() && it > 0.0 } ?: spotNow
+    val rawDelta: Double = if (spotNow.isFinite() && ref > 0.0) (spotNow - ref) / ref else 0.0
+
+// odbaci NaN/Inf i očite “glitch” spikeove (npr. > 500%)
+    val deltaPctContinuous: Double = when {
+        rawDelta.isNaN() || rawDelta.isInfinite() -> 0.0
+        kotlin.math.abs(rawDelta) > 5.0 -> 0.0
+        else -> rawDelta
+    }
+
+// Za prikaz ograniči na razuman raspon (npr. ±50%)
+    val SAFE_MAX = 0.50
+    val safeDisplayPct = deltaPctContinuous.coerceIn(-SAFE_MAX, SAFE_MAX)
 
     // Tikovi za marker (vizualni pokazivač i “overload” blink > ±0.5%)
     val tick = 0.001
@@ -552,7 +563,7 @@ fun GoldStaticScreen(
             )
 
             // === PRIKAZ POSTOTKA: točno prema refSpot (kontinuiran), ne “steppan” ===
-            val showPct = deltaPctContinuous
+            val showPct = safeDisplayPct
             val txt = pctStr(showPct)
             val baseLabelColor = if (showPct >= 0) buyTint else sellTint
             val softLabel = androidx.compose.ui.graphics.lerp(warmWhite, baseLabelColor, 0.55f)
@@ -674,7 +685,10 @@ fun GoldStaticScreen(
                     followWave = false,
                     activeOverride = if (yWaterPxForTriggers <= 150f) 1f else 0f,
                     modifier = Modifier.pointerInput(Unit) {
-                        detectTapGestures(onTap = { showPicker = true })
+                        detectTapGestures(
+                            onTap = { showPicker = true },
+                            onLongPress = { onSetRefSpot() }   // ← long-press postavlja refSpot
+                        )
                     }
                 )
             }
