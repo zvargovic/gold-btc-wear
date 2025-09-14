@@ -9,6 +9,8 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -16,6 +18,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import hr.zvargovic.goldbtcwear.R
+import hr.zvargovic.goldbtcwear.alarm.AlarmService              // ✅ DODANO
 import hr.zvargovic.goldbtcwear.data.*
 import hr.zvargovic.goldbtcwear.data.api.YahooService
 import hr.zvargovic.goldbtcwear.presentation.AddAlertScreen
@@ -26,6 +29,21 @@ import hr.zvargovic.goldbtcwear.workers.TdCorrWorker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+
+// --- MARKET STATUS (CLOSED + countdown) ---
+import hr.zvargovic.goldbtcwear.util.MarketHours
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.wear.compose.material.Text
+import java.time.Duration
+import java.time.Instant
+import androidx.compose.ui.unit.sp
+// ------------------------------------------
 
 private const val TAG_APP = "APP"
 private const val CHANNEL_ALERTS = "alerts"
@@ -40,8 +58,8 @@ fun AppNavHost() {
     val settingsStore = remember { SettingsStore(ctx) }
     val corrStore     = remember { CorrectionStore(ctx) }
     val quotaStore    = remember { RequestQuotaStore(ctx) }
-    val spotStore     = remember { SpotStore(ctx) }        // Spot i referenca
-    val rsiStore      = remember { RsiStore(ctx) }         // Povijest za RSI
+    val spotStore     = remember { SpotStore(ctx) }
+    val rsiStore      = remember { RsiStore(ctx) }
     val yahoo         = remember { YahooService() }
     val scope         = rememberCoroutineScope()
 
@@ -49,26 +67,40 @@ fun AppNavHost() {
     val selectedAlert = remember { mutableStateOf<Double?>(null) }
     var spot by remember { mutableStateOf(2315.40) }
 
-    // UI je uvijek Yahoo×K; toggle je samo vizual
     val activeService = PriceService.Yahoo
-
     val corrPct by corrStore.corrFlow.collectAsState(initial = 0.0)
 
-    // Dnevni brojač requesta
     val dayUsed by quotaStore.dayUsedFlow.collectAsState(initial = 0)
     val reqLimit = RequestQuotaStore.DAILY_LIMIT
 
     val apiKey by settingsStore.apiKeyFlow.collectAsState(initial = null)
     val alarmEnabled by settingsStore.alarmEnabledFlow.collectAsState(initial = false)
 
-    // Ref i zadnji spot
     val refSpot by spotStore.refSpotFlow.collectAsState(initial = null)
     val lastSpot by spotStore.lastSpotFlow.collectAsState(initial = null)
 
-    // === RSI stanje ===
     val rsiPeriod = 14
     var rsi by remember { mutableStateOf<Float?>(null) }
     val closes = remember { mutableStateListOf<Double>() }
+
+    // --- STATUS TRŽIŠTA (open/closed) + countdown ---
+    var marketOpen by remember { mutableStateOf(true) }
+    var closedLine by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val st  = MarketHours.status()
+            marketOpen = st.isOpen
+            closedLine = if (!marketOpen) {
+                val now  = Instant.now()
+                val secs = Duration.between(now, st.nextChange).seconds.coerceAtLeast(0)
+                val h = (secs / 3600).toInt()
+                val m = ((secs % 3600) / 60).toInt()
+                ctx.getString(R.string.market_closed_opens_in, h, m)
+            } else null
+            delay(30_000)
+        }
+    }
+    // -------------------------------------------------
 
     fun mask(s: String?): String =
         if (s.isNullOrBlank()) "(null)" else s.take(3) + "…" + s.takeLast(minOf(4, s.length))
@@ -76,27 +108,32 @@ fun AppNavHost() {
     LaunchedEffect(apiKey) { Log.i(TAG_APP, "apiKey(DataStore)=${mask(apiKey)} len=${apiKey?.length ?: 0}") }
     LaunchedEffect(alarmEnabled) { Log.i(TAG_APP, "settings: alarmEnabled=$alarmEnabled") }
 
-    // Kickstart Workera
+    // ---- KEY GATE ----
+    var needsKey by remember { mutableStateOf(false) }
+    LaunchedEffect(apiKey) {
+        val v = apiKey?.trim().orEmpty()
+        needsKey = v.isEmpty()
+        if (!needsKey && navController.currentDestination?.route == "setup") {
+            navController.popBackStack() // back to gold
+        }
+    }
+
+    // Worker
     LaunchedEffect(Unit) { TdCorrWorker.scheduleNext(ctx, "app-compose-start") }
 
-    // Init: alerti + RSI bootstrap
+    // Init: alerts + RSI bootstrap
     LaunchedEffect(Unit) {
         alerts.clear()
         alerts.addAll(alertsStore.load())
         selectedAlert.value = selectedStore.load()
-        Log.i(TAG_APP, "init: alerts=${alerts.size}, selected=${selectedAlert.value}")
 
         val boot = rsiStore.loadAll()
         closes.clear(); closes.addAll(boot.takeLast(200))
-        computeRsi(closes, rsiPeriod)?.let { r ->
-            rsi = r
-            Log.i(TAG_APP, "RSI bootstrap=${"%.1f".format(r)} (n=${closes.size})")
-        }
+        computeRsi(closes, rsiPeriod)?.let { rsi = it }
     }
 
-    // Yahoo ticker + K + spremanje + RSI feed
+    // Yahoo ticker + korekcija + spremanje + RSI feed
     LaunchedEffect(corrPct) {
-        Log.i(TAG_APP, "ticker: Yahoo loop (K=${"%.4f".format(corrPct)})")
         while (true) {
             val result = yahoo.getSpotEur()
             result.onSuccess { raw ->
@@ -104,32 +141,15 @@ fun AppNavHost() {
                 val corrected = raw * k
                 if (corrected.isFinite() && corrected > 0.0) {
                     spot = corrected
-                    Log.d(TAG_APP, "price: raw=${"%.2f".format(raw)} K=${"%.4f".format(k)} spot=${"%.2f".format(corrected)}")
-
-                    // spot store
                     scope.launch { spotStore.saveLast(corrected) }
                     if (refSpot == null) scope.launch { spotStore.setRef(corrected) }
 
-                    // --- RSI feed + LOG update ---
                     closes += corrected
                     while (closes.size > 200) closes.removeAt(0)
                     scope.launch { rsiStore.saveAll(closes.toList(), maxItems = 200) }
-
-                    val newRsi = computeRsi(closes, rsiPeriod)
-                    if (newRsi != null) {
-                        val prev = rsi
-                        rsi = newRsi
-                        if (prev == null || kotlin.math.abs(newRsi - prev) >= 0.1f) {
-                            Log.i(TAG_APP, "RSI update=${"%.1f".format(newRsi)} (n=${closes.size})")
-                        } else {
-                            Log.d(TAG_APP, "RSI unchanged=${"%.1f".format(newRsi)}")
-                        }
-                    } else {
-                        Log.d(TAG_APP, "RSI pending (need ${rsiPeriod + 1} closes), n=${closes.size}")
-                    }
+                    computeRsi(closes, rsiPeriod)?.let { rsi = it }
+                    hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
                 }
-            }.onFailure { e ->
-                Log.w(TAG_APP, "price yahoo failed: ${e.message}")
             }
             delay(20_000)
         }
@@ -167,10 +187,14 @@ fun AppNavHost() {
         val pi = PendingIntent.getActivity(context, 1001, openIntent, flags)
 
         val title = context.getString(R.string.app_name)
-        val text = "Alert hit @ €${"%,.2f".format(hitAt)} (spot €${"%,.2f".format(current)})"
+        val text = context.getString(
+            R.string.alert_hit_text,
+            "€" + "%,.2f".format(hitAt),
+            "€" + "%,.2f".format(current)
+        )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ALERTS)
-            .setSmallIcon(R.mipmap.ic_launcher) // postoji svugdje
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -179,22 +203,37 @@ fun AppNavHost() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
 
         try {
-            with(NotificationManagerCompat.from(context)) {
-                notify(2001, builder.build())
-            }
+            NotificationManagerCompat.from(context).notify(2001, builder.build())
         } catch (t: Throwable) {
             Log.w(TAG_APP, "notify failed: ${t.message}")
         }
     }
 
+    // ✅ SADA POKREĆE PRAVI ALARM iz UI-a
     fun triggerAlertHit(context: Context, previousSelected: Double?, currentSpot: Double) {
-        Log.i(TAG_APP, "ALERT HIT -> prev=$previousSelected spot=${"%.2f".format(currentSpot)}")
-        vibrateStrong(context)
-        postAlertNotification(context, previousSelected ?: currentSpot, currentSpot)
+        // ako je alarm uključen -> pravi alarm (servis + full screen)
+        if (alarmEnabled) {
+            hr.zvargovic.goldbtcwear.alarm.AlarmService.start(context)
+        } else {
+            // inače samo normalna notifikacija (sa zvukom kanala, ali bez loop/vibre)
+            postAlertNotification(context, previousSelected ?: currentSpot, currentSpot)
+        }
     }
 
+    // ===== UI navigacija =====
     NavHost(navController = navController, startDestination = "gold") {
+
         composable("gold") {
+            // Ako si na gold i nema ključa → tek tada idi u setup
+            LaunchedEffect(needsKey) {
+                if (needsKey) {
+                    navController.navigate("setup") {
+                        popUpTo("gold") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            }
+
             GoldStaticScreen(
                 onOpenAlerts = { navController.navigate("alerts") },
                 onOpenSetup  = { navController.navigate("setup") },
@@ -205,14 +244,12 @@ fun AppNavHost() {
                     val prev = selectedAlert.value
                     selectedAlert.value = v
                     scope.launch { selectedStore.save(v) }
-                    if (prev != null && v == null) {
-                        triggerAlertHit(ctx, prev, spot)
-                    }
+                    if (prev != null && v == null) triggerAlertHit(ctx, prev, spot)
                 },
 
                 spot = spot,
-                activeService = PriceService.Yahoo,
-                onToggleService = { Log.i(TAG_APP, "toggle ignored (TD u workeru, UI = Yahoo×K)") },
+                activeService = activeService,
+                onToggleService = { /* no-op: UI je Yahoo×K */ },
 
                 refSpot = refSpot,
                 rsi = rsi,
@@ -220,7 +257,6 @@ fun AppNavHost() {
                 onSetRefSpot = {
                     val v = spot
                     scope.launch { spotStore.setRef(v) }
-                    Log.i(TAG_APP, "Ref reset to current spot=${"%.2f".format(v)}")
                 },
 
                 reqUsedThisMonth = dayUsed,
@@ -230,6 +266,44 @@ fun AppNavHost() {
                 kTextExtraStep = +8,
                 kTextRadialOffsetPx = 0f
             )
+
+            // --- JEDNOLINIJSKI, MALI BADGE (kompaktan i proziran) ---
+            if (closedLine != null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .offset(y = -2.dp) // pozicija ispod spota
+                            .background(
+                                color = Color(0x11FFFFFF),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = closedLine!!,
+                            color = Color(0xFFF60303),
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+
+            // Overlay SAMO kad ključa nema
+            if (needsKey) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(stringResource(R.string.enter_api_key_overlay))
+                }
+            }
         }
 
         composable("alerts") {
@@ -276,10 +350,12 @@ fun AppNavHost() {
                         settingsStore.saveAll(apiKey = key, alarmEnabled = alarm)
                         Log.i(TAG_APP, "settings saved -> apiKey=${mask(key)}, alarm=$alarm")
                         // fallback za Workera
-                        ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+                        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
                             .edit().putString("api_key", key).apply()
-                        Log.i(TAG_APP, "SharedPrefs(settings).api_key = ${mask(key)}")
                     }
+                    // Odmah ugasi overlay lokalno (ne čekaj flow emit)
+                    needsKey = key.isBlank()
+                    // Natrag na "gold"
                     navController.popBackStack()
                 }
             )

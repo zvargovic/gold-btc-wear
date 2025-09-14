@@ -16,6 +16,9 @@ enum class PriceService { Yahoo, TwelveData }
 
 class SpotViewModel(app: Application) : AndroidViewModel(app) {
 
+    private val _ts = MutableStateFlow<Long?>(null)
+    val ts: StateFlow<Long?> = _ts
+
     private val repo = PriceRepository(
         yahoo = YahooService(),
         td = TwelveDataService(),
@@ -40,7 +43,10 @@ class SpotViewModel(app: Application) : AndroidViewModel(app) {
                     PriceService.Yahoo -> repo.fetchYahooEur()
                     PriceService.TwelveData -> repo.fetchTwelveDataEur() ?: repo.fetchYahooEur()
                 }
-                value?.let { _eur.value = it }
+                value?.let {
+                    _eur.value = it
+                    _ts.value  = System.currentTimeMillis()   // ➋ ZAPIS vremena zadnjeg uspješnog dohvata
+                }
                 delay(20_000)
             }
         }

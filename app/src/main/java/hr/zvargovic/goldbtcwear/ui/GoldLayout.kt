@@ -1,5 +1,7 @@
 package hr.zvargovic.goldbtcwear.ui
+
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -47,7 +49,6 @@ import androidx.core.content.ContextCompat
 
 private inline fun lerpF(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
-
 @Composable
 fun GoldStaticScreen(
     modifier: Modifier = Modifier,
@@ -63,13 +64,13 @@ fun GoldStaticScreen(
     onToggleService: () -> Unit,
     onSetRefSpot: () -> Unit,
 
-    // [SPOTSTORE] Referentni spot za točan % (ako je null, kao fallback koristimo trenutni spot)
+    // [SPOTSTORE] Referentni spot za točan % (ako je null, fallback je trenutni spot)
     refSpot: Double?,
 
-    // RSI vrijednost (0–100) koja dolazi izvana; ako je null, koristimo fallback animaciju
+    // RSI (0–100) izvana; ako je null, koristimo fallback animaciju
     rsi: Float? = null,
 
-    // Desna libela — req counter (ostaje)
+    // Desna libela — req counter
     reqUsedThisMonth: Int,
     reqMonthlyQuota: Int,
 
@@ -84,22 +85,19 @@ fun GoldStaticScreen(
     kTextTangentOffsetPx: Float = 20f,
     kTextNormalOffsetPx: Float = 0f,
 ) {
+    val ctx = LocalContext.current
+
     val spotNow = spot
     val premiumPct = 0.0049
     val buy = spotNow * (1 + premiumPct)
     val sell = spotNow * (1 - premiumPct)
 
-    // [REMOVED] lastRequestPrice — više se ne koristi
-    // val lastRequestPrice = 2312.0
-
-    // Popup state
     var showPicker by remember { mutableStateOf(false) }
 
     // alertPrice se inicijalizira iz selectedAlert (preživljava restart)
     var alertPrice by remember(selectedAlert) { mutableStateOf<Double?>(selectedAlert) }
     val alertWindowEur = 30.0
     val alertHitToleranceEur = 0.10
-
     var alertAnchorSpot by remember { mutableStateOf<Double?>(null) }
     LaunchedEffect(alertPrice) {
         alertAnchorSpot = if (alertPrice != null) spotNow else null
@@ -136,7 +134,6 @@ fun GoldStaticScreen(
             tAnim += dt * 0.30f
         }
     }
-
     val fill01: Float = alertPrice?.let { ap ->
         val dist = kotlin.math.abs(ap - spotNow)
         val f = 1.0 - (dist / alertWindowEur).coerceIn(0.0, 1.0)
@@ -205,23 +202,19 @@ fun GoldStaticScreen(
     val yWaterPxForTriggers = yPx
 
     fun waterLevelRatio(): Float = (yWaterPxForDrawing / screenH).coerceIn(0f, 1f)
-
-    // === TOČAN POSTOTAK PREMA refSpot (+zaštita) ===
+    // === POSTOTAK PREMA refSpot (+zaštita) ===
     val ref = refSpot?.takeIf { it.isFinite() && it > 0.0 } ?: spotNow
     val rawDelta: Double = if (spotNow.isFinite() && ref > 0.0) (spotNow - ref) / ref else 0.0
 
-// odbaci NaN/Inf i očite “glitch” spikeove (npr. > 500%)
     val deltaPctContinuous: Double = when {
         rawDelta.isNaN() || rawDelta.isInfinite() -> 0.0
         kotlin.math.abs(rawDelta) > 5.0 -> 0.0
         else -> rawDelta
     }
 
-// Za prikaz ograniči na razuman raspon (npr. ±50%)
     val SAFE_MAX = 0.50
     val safeDisplayPct = deltaPctContinuous.coerceIn(-SAFE_MAX, SAFE_MAX)
 
-    // Tikovi za marker (vizualni pokazivač i “overload” blink > ±0.5%)
     val tick = 0.001
     val maxTicks = 5
     val rawSteps = (deltaPctContinuous / tick).roundToInt()
@@ -234,7 +227,6 @@ fun GoldStaticScreen(
     }
     fun euro(amount: Double): String = "€" + String.format(Locale.US, "%,.2f", amount)
 
-    // Blink bez animateFloat/LinearEasing — čisto preko sinusa i tAnim
     val blinkAlpha: Float = run {
         val s = ((sin(tAnim * 2.0f * Math.PI.toFloat() * 0.7f) + 1f) * 0.5f)
         0.25f + 0.75f * s
@@ -267,13 +259,10 @@ fun GoldStaticScreen(
         label = "bottomBubbleStep"
     )
 
-    val res = LocalContext.current.resources
+    val res = ctx.resources
     val iconTop = remember { ImageBitmap.imageResource(res, R.drawable.ic_yahoo) }
     val iconBottom = remember { ImageBitmap.imageResource(res, R.drawable.ic_twelve) }
-
     // === RSI ===
-    // Ako je `rsi` proslijeđen izvana (0..100), animiramo se prema njemu.
-    // Inače, koristimo blagi fallback (sine) kako UI ne bi bio prazan.
     val fallbackRsiTD = (50f + 25f * sin((tAnim * 0.85f).toDouble()).toFloat()).coerceIn(0f, 100f)
     val fallbackRsiYahoo = (50f + 25f * sin((tAnim * 0.65f + 1.1f).toDouble()).toFloat()).coerceIn(0f, 100f)
     val fallbackRsi = ((fallbackRsiTD + fallbackRsiYahoo) * 0.5f).coerceIn(0f, 100f)
@@ -284,7 +273,16 @@ fun GoldStaticScreen(
         animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
         label = "rsiAnimated"
     )
-    // ======= CRTANJE =======
+
+    // *** PRE-COMPUTED STRINGS ZA CANVAS BLOKOVE (bez stringResource u draw scope-u) ***
+    // Lijeva skala: k-factor tekst
+    val kTxtForCanvas = remember(kFactorPct) {
+        if (kFactorPct >= 0) {
+            ctx.getString(R.string.k_factor_pos, kFactorPct * 100.0)
+        } else {
+            ctx.getString(R.string.k_factor_neg, kFactorPct * 100.0)
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -371,10 +369,10 @@ fun GoldStaticScreen(
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    ImageView(ctx).apply {
+                factory = { ctx2 ->
+                    ImageView(ctx2).apply {
                         scaleType = ImageView.ScaleType.CENTER_CROP
-                        setImageDrawable(ContextCompat.getDrawable(ctx, R.drawable.anim))
+                        setImageDrawable(ContextCompat.getDrawable(ctx2, R.drawable.anim))
                         (drawable as? AnimatedImageDrawable)?.start()
                     }
                 },
@@ -520,7 +518,7 @@ fun GoldStaticScreen(
             drawCircle(Color.White.copy(alpha = 0.8f), 2.5f, Offset(px + 0.8f, py - 0.8f))
         }
 
-        // 3) lijeva skala
+        // 3) lijeva skala (koristi kTxtForCanvas umjesto stringResource u Canvas-u)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -562,7 +560,6 @@ fun GoldStaticScreen(
                 cap = StrokeCap.Round
             )
 
-            // === PRIKAZ POSTOTKA: točno prema refSpot (kontinuiran), ne “steppan” ===
             val showPct = safeDisplayPct
             val txt = pctStr(showPct)
             val baseLabelColor = if (showPct >= 0) buyTint else sellTint
@@ -596,14 +593,9 @@ fun GoldStaticScreen(
                 c.restore()
             }
 
-            // --- K-FAKTOR: tekst po LUKU (prati obod) ---
+            // --- K-FAKTOR tekst po luku ---
             run {
-                val kTxt = String.format(
-                    Locale.US,
-                    if (kFactorPct >= 0) "K:+%.2f%%" else "K:%.2f%%",
-                    kFactorPct * 100.0
-                )
-
+                val kTxt = kTxtForCanvas
                 val kPaint = android.graphics.Paint(txtPaint).apply {
                     color = android.graphics.Color.argb(
                         (orangeLine.alpha * 255).roundToInt(),
@@ -614,31 +606,21 @@ fun GoldStaticScreen(
                     alpha = (0.95f * 255).toInt()
                 }
 
-                // kut na kojem želimo CENTAR teksta
                 val kAngCenter = start + (kTextExtraStep + maxTicks) * stepAng
                 val kRad = Math.toRadians(kAngCenter.toDouble()).toFloat()
-
-                // polumjer (uz tvoj radijalni offset)
                 val kR = (inner + outer) / 2.08f + kTextRadialOffsetPx
-
-                // (prije računanja širine) – razmak slova
                 kPaint.letterSpacing = 0.03f
 
-                // 1) širina + malo “lufta” da se ne sudara rub
                 val padPx = 6f
                 val textW = kPaint.measureText(kTxt) + padPx
-
-                // 2) sweep iz duljine
                 val circumference = (2f * Math.PI.toFloat() * kR)
                 val textSweepDeg = (textW / circumference) * 360f
 
-                // 3) arc na kojem pišemo
                 val arcStartDeg = kAngCenter - textSweepDeg / 2f
                 val arcSweepDeg = textSweepDeg
                 val arcRect = RectF(cx - kR, cy - kR, cx + kR, cy + kR)
                 val path = AndroidPath().apply { addArc(arcRect, arcStartDeg, arcSweepDeg) }
 
-                // 4) offseti
                 val pm = android.graphics.PathMeasure(path, false)
                 val hOff = (pm.length - textW) / 2f + kTextTangentOffsetPx
                 val vOff = kTextNormalOffsetPx
@@ -649,8 +631,7 @@ fun GoldStaticScreen(
                 }
             }
         }
-
-        // 4) naslov/spot/buy/sell  — SPOT je klikabilan -> popup
+        // 4) naslov/spot/buy/sell
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -661,8 +642,8 @@ fun GoldStaticScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 FollowWaterText(
                     id = "title",
-                    text = "Gold (EUR/oz)",
-                    txtColor = orangeLine,
+                    text = stringResource(R.string.title_gold),
+                    txtColor = Color(0xFFFF7A00),
                     fontSizeSp = 14,
                     weight = FontWeight.Normal,
                     t = tAnim,
@@ -675,7 +656,7 @@ fun GoldStaticScreen(
                 FollowWaterText(
                     id = "spot",
                     text = euro(spotNow),
-                    txtColor = orangeLine,
+                    txtColor = Color(0xFFFF7A00),
                     fontSizeSp = 30,
                     weight = FontWeight.Bold,
                     t = tAnim,
@@ -687,7 +668,7 @@ fun GoldStaticScreen(
                     modifier = Modifier.pointerInput(Unit) {
                         detectTapGestures(
                             onTap = { showPicker = true },
-                            onLongPress = { onSetRefSpot() }   // ← long-press postavlja refSpot
+                            onLongPress = { onSetRefSpot() }
                         )
                     }
                 )
@@ -703,7 +684,7 @@ fun GoldStaticScreen(
                 FollowWaterText(
                     id = "buy",
                     text = euro(buy),
-                    txtColor = androidx.compose.ui.graphics.lerp(orangeLine, buyTint, 0.65f),
+                    txtColor = androidx.compose.ui.graphics.lerp(Color(0xFFFF7A00), Color(0xFF2FBF6B), 0.65f),
                     fontSizeSp = 18,
                     weight = FontWeight.SemiBold,
                     t = tAnim,
@@ -716,7 +697,7 @@ fun GoldStaticScreen(
                 FollowWaterText(
                     id = "sell",
                     text = euro(sell),
-                    txtColor = androidx.compose.ui.graphics.lerp(orangeLine, sellTint, 0.65f),
+                    txtColor = androidx.compose.ui.graphics.lerp(Color(0xFFFF7A00), Color(0xFFE0524D), 0.65f),
                     fontSizeSp = 18,
                     weight = FontWeight.SemiBold,
                     t = tAnim,
@@ -769,22 +750,18 @@ fun GoldStaticScreen(
             val signTextSize = 11.sp.toPx() * 1.25f
             val minusPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = android.graphics.Color.argb(
-                    (sellTint.alpha * 255).roundToInt(),
-                    (sellTint.red * 255).roundToInt(),
-                    (sellTint.green * 255).roundToInt(),
-                    (sellTint.blue * 255).roundToInt()
-                )
+                color = android.graphics.Color.argb( (Color(0xFFE0524D).alpha*255).roundToInt(),
+                    (Color(0xFFE0524D).red*255).roundToInt(),
+                    (Color(0xFFE0524D).green*255).roundToInt(),
+                    (Color(0xFFE0524D).blue*255).roundToInt())
                 textSize = signTextSize
                 typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
             }
             val plusPaint = android.graphics.Paint(minusPaint).apply {
-                color = android.graphics.Color.argb(
-                    (buyTint.alpha * 255).roundToInt(),
-                    (buyTint.red * 255).roundToInt(),
-                    (buyTint.green * 255).roundToInt(),
-                    (buyTint.blue * 255).roundToInt()
-                )
+                color = android.graphics.Color.argb( (Color(0xFF2FBF6B).alpha*255).roundToInt(),
+                    (Color(0xFF2FBF6B).red*255).roundToInt(),
+                    (Color(0xFF2FBF6B).green*255).roundToInt(),
+                    (Color(0xFF2FBF6B).blue*255).roundToInt())
             }
             fun drawSign(text: String, x: Float, y: Float, deg: Float, paint: android.graphics.Paint) {
                 val fm = paint.fontMetrics
@@ -798,11 +775,10 @@ fun GoldStaticScreen(
                     nc.restore()
                 }
             }
-            val startDeg = start
-            val endDeg = start + span
-            drawSign("–", sx, sy, startDeg, minusPaint)
-            drawSign("+", ex, ey, endDeg, plusPaint)
+            drawSign("–", sx, sy, start, minusPaint)
+            drawSign("+", ex, ey, start + span, plusPaint)
 
+            // Ako postoji alert – tekst na luku
             if (alertPrice != null) {
                 val txt = euro(alertPrice!!)
                 val txtPaint = android.graphics.Paint().apply {
@@ -815,9 +791,7 @@ fun GoldStaticScreen(
                     )
                 }
                 val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
-                val textPath = AndroidPath().apply {
-                    addArc(arcRect, start + span, -span)
-                }
+                val textPath = AndroidPath().apply { addArc(arcRect, start + span, -span) }
                 val pm = android.graphics.PathMeasure(textPath, false)
                 val textW = txtPaint.measureText(txt)
                 val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
@@ -843,7 +817,8 @@ fun GoldStaticScreen(
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
         }
 
-        // 6) GORNJA LIBELA + RSI
+        // 6) GORNJA LIBELA + RSI  (precompute string izvan Canvas-a)
+        val rsiTextForCanvas = ctx.getString(R.string.rsi_value, rsiAnimated.roundToInt())
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -906,12 +881,9 @@ fun GoldStaticScreen(
                     nc.restore()
                 }
             }
-            val startDeg = start
-            val endDeg = start + span
-            drawSign("0", sx, sy, startDeg, labelPaint)
-            drawSign("100", ex, ey, endDeg, labelPaint)
+            drawSign("0", sx, sy, start, labelPaint)
+            drawSign("100", ex, ey, start + span, labelPaint)
 
-            val rsiText = "RSI:${rsiAnimated.roundToInt()}"
             val txtPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
                 color = android.graphics.Color.argb(200, 255, 122, 0)
@@ -925,12 +897,12 @@ fun GoldStaticScreen(
             val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
             val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
             val pm = android.graphics.PathMeasure(textPath, false)
-            val textW = txtPaint.measureText(rsiText)
+            val textW = txtPaint.measureText(rsiTextForCanvas)
             val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
             val vOff = 30f
 
             drawIntoCanvas { c ->
-                c.nativeCanvas.drawTextOnPath(rsiText, textPath, hOff, vOff, txtPaint)
+                c.nativeCanvas.drawTextOnPath(rsiTextForCanvas, textPath, hOff, vOff, txtPaint)
             }
 
             val rsi01 = (rsiAnimated / 100f).coerceIn(0f, 1f)
@@ -986,7 +958,8 @@ fun GoldStaticScreen(
             }
         }
 
-        // 8) desna libela (servisi)
+        // 8) desna libela (servisi) – req text pre-compute
+        val reqTextForCanvas = ctx.getString(R.string.req_counter, reqUsedThisMonth, reqMonthlyQuota)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width; val h = size.height
             val cx = w / 2f; val cy = h / 2f
@@ -1038,10 +1011,8 @@ fun GoldStaticScreen(
                     )
                 }
             }
-            val startDeg = start
-            val endDeg = start + span
-            drawIcon(iconTop, srcTop, sx, sy, startDeg)
-            drawIcon(iconBottom, srcBot, ex, ey, endDeg)
+            drawIcon(iconTop, srcTop, sx, sy, start)
+            drawIcon(iconBottom, srcBot, ex, ey, start + span)
 
             val circumference = (2f * Math.PI.toFloat() * tubeR)
             val iconArc = iconSize / circumference * 360f
@@ -1058,9 +1029,9 @@ fun GoldStaticScreen(
             drawCircle(Color.White.copy(alpha = 0.28f), bubbleR, Offset(bx, by))
             drawCircle(Color.White.copy(alpha = 0.55f), bubbleR * 0.50f, Offset(bx + bubbleR * 0.35f, by - bubbleR * 0.35f))
             drawCircle(Color.Black.copy(alpha = 0.18f), bubbleR * 0.98f, Offset(bx, by + bubbleR * 0.20f), blendMode = BlendMode.Multiply)
-            // path-tekst "Req: N/800"
+
+            // path-tekst "Req: N/800" — koristi reqTextForCanvas
             run {
-                val reqText = "Req: ${reqUsedThisMonth}/${reqMonthlyQuota}"
                 val txtPaint = android.graphics.Paint().apply {
                     isAntiAlias = true
                     color = android.graphics.Color.argb(200, 255, 122, 0)
@@ -1073,16 +1044,16 @@ fun GoldStaticScreen(
                 val arcRect = RectF(cx - tubeR, cy - tubeR, cx + tubeR, cy + tubeR)
                 val textPath = AndroidPath().apply { addArc(arcRect, start, span) }
                 val pm = android.graphics.PathMeasure(textPath, false)
-                val textW = txtPaint.measureText(reqText)
+                val textW = txtPaint.measureText(reqTextForCanvas)
                 val hOff = ((pm.length - textW) / 2f).coerceAtLeast(0f)
                 val vOff = 6f
                 drawIntoCanvas { c ->
-                    c.nativeCanvas.drawTextOnPath(reqText, textPath, hOff, vOff, txtPaint)
+                    c.nativeCanvas.drawTextOnPath(reqTextForCanvas, textPath, hOff, vOff, txtPaint)
                 }
             }
         }
 
-        // TAP TARGET: donjih ~35% ekrana (otvara Alerts listu)
+        // TAP TARGETI + POPUP
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1090,19 +1061,13 @@ fun GoldStaticScreen(
                 .align(Alignment.BottomCenter)
                 .pointerInput(Unit) { detectTapGestures(onTap = { onOpenAlerts() }) }
         )
-
-        // TAP TARGET: desna libela (prebacuje servis)
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight(0.6f)
                 .width(72.dp)
-                .pointerInput(Unit) {
-                    detectTapGestures { onToggleService() }
-                }
+                .pointerInput(Unit) { detectTapGestures { onToggleService() } }
         )
-
-        // TAP TARGET: gornjih ~30% ekrana (otvara Setup)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1111,7 +1076,6 @@ fun GoldStaticScreen(
                 .pointerInput(Unit) { detectTapGestures(onTap = { onOpenSetup() }) }
         )
 
-        // POPUP – odabir alerta; spremamo kroz onSelectAlert
         if (showPicker) {
             AlertPickerDialog(
                 alerts = alerts,
@@ -1126,7 +1090,6 @@ fun GoldStaticScreen(
         }
     }
 }
-
 /* ---------- FollowWaterText ---------- */
 @Composable
 private fun FollowWaterText(
@@ -1144,7 +1107,6 @@ private fun FollowWaterText(
     activeOverride: Float? = null
 ) {
     val density = LocalDensity.current
-
     var wet by remember(id) { mutableStateOf(0f) }
     var prevT by remember(id) { mutableStateOf(t) }
     var latched by remember(id) { mutableStateOf(false) }
@@ -1158,14 +1120,11 @@ private fun FollowWaterText(
             val tt = ((x - e0) / (e1 - e0)).coerceIn(0f, 1f)
             return tt * tt * (3f - 2f * tt)
         }
-
         val textSizePx = with(density) { fontSizeSp.sp.toPx() }
         val w = size.width
         val h = size.height
-
         val baseLine = h * 0.55f + with(density) { yOffset.toPx() }
         val twoPi = (Math.PI * 2).toFloat()
-
         val ampBase = 10f
         val ampChop = 2.6f
         val lenLong = w / 1.35f
@@ -1174,7 +1133,6 @@ private fun FollowWaterText(
         val phaseL = t * 0.45f
         val phaseM = t * 0.9f + 1.1f
         val phaseS = t * 1.6f + 0.6f
-
         fun crestLocal(x: Float): Float =
             baseLine +
                     ampBase * sin((x / lenLong) * twoPi + phaseL) * 0.65f +
@@ -1315,6 +1273,7 @@ private fun FollowWaterText(
         }
     }
 }
+
 /* ---------- POPUP: AlertPickerDialog ---------- */
 @Composable
 private fun AlertPickerDialog(
@@ -1338,7 +1297,7 @@ private fun AlertPickerDialog(
                     .padding(vertical = 10.dp, horizontal = 12.dp)
             ) {
                 WearText(
-                    text = "Odaberi alert",
+                    text = stringResource(R.string.alert_picker_title),
                     color = Color(0xFFFF7A00),
                     fontSize = 16.sp,
                     modifier = Modifier
@@ -1348,7 +1307,7 @@ private fun AlertPickerDialog(
 
                 if (alerts.isEmpty()) {
                     WearText(
-                        text = "Nema spremljenih alerta",
+                        text = stringResource(R.string.alerts_empty),
                         color = Color(0xFFB0B0B0),
                         fontSize = 13.sp,
                         modifier = Modifier
@@ -1389,7 +1348,7 @@ private fun AlertPickerDialog(
                         .clickable { onDismiss() }
                         .padding(horizontal = 18.dp, vertical = 8.dp)
                 ) {
-                    WearText("Zatvori", color = Color.Black, fontSize = 14.sp)
+                    WearText(stringResource(R.string.close), color = Color.Black, fontSize = 14.sp)
                 }
             }
         }

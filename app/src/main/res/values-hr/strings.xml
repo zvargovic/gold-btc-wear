@@ -1,0 +1,62 @@
+<resources>
+    <string name="app_name">Gold BTC Wear</string>
+    <string name="tile_label">Gold</string>
+    <!-- Gold layout -->
+    <string name="title_gold">ZLATO</string>
+    <string name="rsi_value">RSI: %1$d</string>
+    <string name="k_factor_pos">K: +%1$.1f%%</string>
+    <string name="k_factor_neg">K: %1$.1f%%</string>
+    <string name="req_counter">Upita: %1$d/%2$d</string>
+
+    <!-- Alerts dialog -->
+    <string name="alert_picker_title">Odaberi alert</string>
+    <string name="alerts_empty">Nema alerta • dodaj u Postavkama</string>
+    <string name="close">Zatvori</string>
+
+    <!-- Setup screen -->
+    <string name="title_setup">Postavke</string>
+    <string name="source">Izvor</string>
+    <string name="source_yahoo">Yahoo</string>
+    <string name="source_twelve">TwelveData</string>
+    <string name="set_ref_spot">Postavi trenutni kao referentni</string>
+    <string name="clear_ref_spot">Obriši referentni</string>
+    <string name="alerts_header">Cjenovni alerti</string>
+    <string name="add_alert">Dodaj alert</string>
+    <string name="remove">Ukloni</string>
+    <string name="back">Natrag</string>
+    <string name="setup_api_key">API ključ</string>
+    <string name="alarm_on">Alarm uključen</string>
+    <string name="alarm_off">Alarm isključen</string>
+    <string name="save">Spremi</string>
+    <string name="enter_api_key">Unesi API ključ</string>
+
+    <!-- AppNavHost -->
+    <string name="market_closed_opens_in">Tržište zatvoreno — otvara za %1$ds %2$dm</string>
+    <string name="enter_api_key_overlay">Upiši API ključ…</string>
+    <string name="alert_hit_text">Upozorenje aktivirano @ %1$s (spot %2$s)</string>
+
+    <!-- HomeScreen -->
+    <string name="loading">Učitavanje…</string>
+    <string name="gold_price_fmt">€%.2f /unca</string>
+
+    <!-- StaleBadge -->
+    <string name="stale_badge">• zastarjelo</string>
+
+    <!-- MarketCloseBadge -->
+    <string name="market_closed">ZATVORENO</string>
+
+    <!-- AddAlertScreen -->
+    <!-- currency/units -->
+    <string name="ccy_eur_lower">eur</string>
+
+    <!-- AddAlertScreen -->
+    <string name="add_alert_placeholder">Upiši cijenu…</string>
+    <string name="confirm">Potvrdi</string>
+
+    <!-- Alarm -->
+    <string name="stop_alarm_action">Stop</string>
+    <string name="alarm_ringing_title">Cijenovni Alarm</string>
+    <string name="alarm_ringing_text">Cilj dosegnut- alarm</string>
+    <string name="alarm_ringing">Alarm uključen</string>
+    <string name="stop">Stop</string>
+</resources>

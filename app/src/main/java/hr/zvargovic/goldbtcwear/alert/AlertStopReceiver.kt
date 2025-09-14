@@ -3,12 +3,15 @@ package hr.zvargovic.goldbtcwear.alert
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import androidx.core.app.NotificationManagerCompat
+import hr.zvargovic.goldbtcwear.alarm.AlarmService
 
+/**
+ * Prima akciju hr.zvargovic.goldbtcwear.ALERT_STOP i gasi AlarmService.
+ */
 class AlertStopReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        AlertAlarm.stop(context)
-        // Zatvori notifikaciju
-        NotificationManagerCompat.from(context).cancel(2001)
+        if (intent.action == AlarmService.ACTION_STOP) {
+            AlarmService.stop(context)
+        }
     }
 }

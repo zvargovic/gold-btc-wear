@@ -2,17 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="hr.zvargovic.goldbtcwear">
 
+    <!-- Wear OS -->
     <uses-feature
         android:name="android.hardware.type.watch"
         android:required="true" />
 
-    <!-- Mreža -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Vibracija / notifikacije -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Android 13+ runtime permission za notifikacije -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -21,9 +21,29 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:supportsRtl="true">
-        <receiver
-            android:name="hr.zvargovic.goldbtcwear.alert.AlertStopReceiver"
-            android:exported="true" />
+
+        <!-- Tile provider -->
+        <service
+            android:name=".tile.GoldTileService"
+            android:exported="true"
+            android:label="@string/tile_label"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+        </service>
+
+        <!-- Full-screen STOP for alarm -->
+        <activity
+            android:name="hr.zvargovic.goldbtcwear.alarm.AlarmStopActivity"
+            android:exported="false"
+            android:theme="@style/Theme.WearGold"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true" />
+
+        <!-- Main activity -->
         <activity
             android:name="hr.zvargovic.goldbtcwear.presentation.MainActivity"
             android:exported="true"
@@ -34,6 +54,21 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Alarm foreground service -->
+        <service
+            android:name="hr.zvargovic.goldbtcwear.alarm.AlarmService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Stop receiver -->
+        <receiver
+            android:name="hr.zvargovic.goldbtcwear.alert.AlertStopReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="hr.zvargovic.goldbtcwear.ALERT_STOP" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>

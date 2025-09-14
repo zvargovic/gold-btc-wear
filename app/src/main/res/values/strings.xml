@@ -1,8 +1,62 @@
 <resources>
-    <string name="app_name">GoldBTC Wear</string>
-    <!--
-    This string is used for square devices and overridden by hello_world in
-    values-round/strings.xml for round devices.
-    -->
-    <string name="hello_world">From the Square world,\nHello, %1$s!</string>
+    <string name="app_name">Gold BTC Wear</string>
+    <string name="tile_label">Gold</string>
+    <!-- Gold layout -->
+    <string name="title_gold">GOLD</string>
+    <string name="rsi_value">RSI: %1$d</string>
+    <string name="k_factor_pos">K: +%1$.1f%%</string>
+    <string name="k_factor_neg">K: %1$.1f%%</string>
+    <string name="req_counter">Req: %1$d/%2$d</string>
+
+    <!-- Alerts dialog -->
+    <string name="alert_picker_title">Select alert</string>
+    <string name="alerts_empty">No alerts • add some in Setup</string>
+    <string name="close">Close</string>
+
+    <!-- Setup screen -->
+    <string name="title_setup">Setup</string>
+    <string name="source">Source</string>
+    <string name="source_yahoo">Yahoo</string>
+    <string name="source_twelve">TwelveData</string>
+    <string name="set_ref_spot">Set current as reference</string>
+    <string name="clear_ref_spot">Clear reference</string>
+    <string name="alerts_header">Price alerts</string>
+    <string name="add_alert">Add alert</string>
+    <string name="remove">Remove</string>
+    <string name="back">Back</string>
+    <string name="setup_api_key">API Key</string>
+    <string name="alarm_on">Alarm ON</string>
+    <string name="alarm_off">Alarm OFF</string>
+    <string name="save">Save</string>
+    <string name="enter_api_key">Enter API key</string>
+
+    <!-- AppNavHost -->
+    <string name="market_closed_opens_in">Market Closed — Opening in %1$dh %2$dm</string>
+    <string name="enter_api_key_overlay">Enter API key…</string>
+    <string name="alert_hit_text">Alert hit @ %1$s (spot %2$s)</string>
+
+    <!-- HomeScreen -->
+    <string name="loading">Loading…</string>
+    <string name="gold_price_fmt">€%.2f /oz</string>
+
+    <!-- StaleBadge -->
+    <string name="stale_badge">• stale</string>
+
+    <!-- MarketCloseBadge -->
+    <string name="market_closed">CLOSED</string>
+
+    <!-- AddAlertScreen -->
+    <!-- currency/units -->
+    <string name="ccy_eur_lower">eur</string>
+
+    <!-- AddAlertScreen -->
+    <string name="add_alert_placeholder">Enter price…</string>
+    <string name="confirm">Confirm</string>
+
+    <!-- Alarm -->
+    <string name="stop_alarm_action">Stop</string>
+    <string name="alarm_ringing_title">Price alert</string>
+    <string name="alarm_ringing_text">Target hit — alarm ringing</string>
+    <string name="alarm_ringing">Alarm is ringing</string>
+    <string name="stop">Stop</string>
 </resources>

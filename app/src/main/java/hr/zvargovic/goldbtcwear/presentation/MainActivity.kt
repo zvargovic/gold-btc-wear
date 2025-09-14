@@ -8,12 +8,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.getSystemService
 import hr.zvargovic.goldbtcwear.ui.AppNavHost
+import hr.zvargovic.goldbtcwear.workers.AlertWorker
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         createNotificationChannel()
+
+        // 1) periodični background check (svakih 15 min)
+        AlertWorker.schedulePeriodic(this)
+
+        // 2) (OPCIJA ZA TEST) – odmah pokreni jedan check sada:
+        // AlertWorker.kickNow(this)
 
         setContent { AppNavHost() }
     }

@@ -11,15 +11,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Text as WearText
+import hr.zvargovic.goldbtcwear.R
 import java.text.DecimalFormat
 import java.text.NumberFormat
 import java.util.Locale
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 
 @Composable
 fun AddAlertScreen(
@@ -29,7 +33,6 @@ fun AddAlertScreen(
 ) {
     val locale = Locale.getDefault()
 
-    // Format za preview (gornji tekst "22.000,00 eur" / "22,000.00 eur" ovisno o lokali)
     val previewFmt = (NumberFormat.getNumberInstance(locale) as DecimalFormat).apply {
         minimumFractionDigits = 2
         maximumFractionDigits = 2
@@ -38,35 +41,26 @@ fun AddAlertScreen(
 
     var text by remember { mutableStateOf("") }
 
-    /**
-     * Robusno parsiranje unosa:
-     * - dopušta i '.' i ',' u istom stringu
-     * - zadnji separator tretira kao decimalni, svi prethodni se brišu (tisućice)
-     * - radi za većinu lokalnih unosnih navika
-     */
     fun parseLocaleDouble(s: String): Double? {
         if (s.isBlank()) return null
-        val raw = s.replace("\\s|\\u00A0".toRegex(), "") // makni razmake / non-breaking space
-
+        val raw = s.replace("\\s|\\u00A0".toRegex(), "")
         val lastDot = raw.lastIndexOf('.')
         val lastComma = raw.lastIndexOf(',')
         val lastSep = maxOf(lastDot, lastComma)
 
         val normalized = if (lastSep < 0) {
-            // nema separatora → čisti integer/float bez razdjelnika
             raw
         } else {
             buildString(raw.length) {
                 raw.forEachIndexed { i, ch ->
                     when {
-                        (ch == '.' || ch == ',') && i == lastSep -> append('.') // decimalni
-                        (ch == '.' || ch == ',') && i != lastSep -> { /* preskoči tisućice */ }
+                        (ch == '.' || ch == ',') && i == lastSep -> append('.')
+                        (ch == '.' || ch == ',') && i != lastSep -> {}
                         else -> append(ch)
                     }
                 }
             }
         }
-
         return normalized.toDoubleOrNull()
     }
 
@@ -85,14 +79,15 @@ fun AddAlertScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Preview vrijednosti formatiran lokalno (ako se može parsirati), inače 0.00 eur
-            val preview = parseLocaleDouble(text)?.let { previewFmt.format(it) + " eur" } ?: run {
-                val zero = (NumberFormat.getNumberInstance(locale) as DecimalFormat).apply {
-                    minimumFractionDigits = 2
-                    maximumFractionDigits = 2
-                }.format(0)
-                "$zero eur"
-            }
+            val preview = parseLocaleDouble(text)?.let { previewFmt.format(it) + " " + stringResource(R.string.ccy_eur_lower) }
+                ?: run {
+                    val zero = (NumberFormat.getNumberInstance(locale) as DecimalFormat).apply {
+                        minimumFractionDigits = 2
+                        maximumFractionDigits = 2
+                    }.format(0)
+                    "$zero ${stringResource(R.string.ccy_eur_lower)}"
+                }
+
             WearText(
                 text = preview,
                 color = Color(0xFFDCD3C8),
@@ -101,38 +96,40 @@ fun AddAlertScreen(
                     .padding(top = 6.dp, bottom = 12.dp)
             )
 
-            // Polje za unos — CRNA pozadina; povećan textStyle da ne izgleda sitno i da ne “ulazi” u liniju
             TextField(
                 value = text,
                 onValueChange = { s ->
-                    // dopusti znamenke + zarez/točku + razmak (nekad se upišu tisućice)
                     val ok = s.all { it.isDigit() || it == '.' || it == ',' || it == ' ' }
                     if (ok) text = s
                 },
                 singleLine = true,
+                placeholder = { WearText(stringResource(R.string.add_alert_placeholder), fontSize = 14.sp, color = Color(0xFF9A9A9A)) },
                 textStyle = LocalTextStyle.current.merge(TextStyle(fontSize = 18.sp)),
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal,
                     imeAction = ImeAction.Done
                 ),
+                keyboardActions = KeyboardActions(
+                    onDone = { confirmIfValid() }
+                ),
                 colors = TextFieldDefaults.textFieldColors(
                     textColor = Color(0xFFDCD3C8),
-                    backgroundColor = Color(0xFF000000),         // crna pozadina
+                    backgroundColor = Color(0xFF000000),
                     focusedIndicatorColor = Color(0xFFFF7A00),
                     unfocusedIndicatorColor = Color(0xFF444444),
                     cursorColor = Color(0xFFFF7A00)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp) // mrvicu više da ne dođe do optičkog preklapanja s linijom
+                    .height(52.dp)
             )
 
             Spacer(Modifier.height(10.dp))
 
-            // Gumbi – iste dimenzije kao "Back" koje već koristiš
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // Back
                 Box(
@@ -143,10 +140,10 @@ fun AddAlertScreen(
                         .clickable { onBack() },
                     contentAlignment = Alignment.Center
                 ) {
-                    WearText("Back", color = Color.Black, fontSize = 14.sp)
+                    WearText(stringResource(R.string.back), color = Color.Black, fontSize = 14.sp)
                 }
 
-                Spacer(modifier = Modifier.width(12.dp)) // razmak između gumba
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Confirm
                 Box(
@@ -157,7 +154,7 @@ fun AddAlertScreen(
                         .clickable { confirmIfValid() },
                     contentAlignment = Alignment.Center
                 ) {
-                    WearText("Confirm", color = Color.Black, fontSize = 14.sp)
+                    WearText(stringResource(R.string.confirm), color = Color.Black, fontSize = 14.sp)
                 }
             }
         }
