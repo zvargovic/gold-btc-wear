@@ -1,12 +1,8 @@
 package hr.zvargovic.goldbtcwear.workers
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.NetworkType
@@ -41,8 +37,10 @@ class AlertWorker(
     private val settingsStore = SettingsStore(ctx)
 
     override suspend fun doWork(): Result {
+        // 1) Selektirani alert
         val selected = selectedStore.load() ?: return Result.success()
 
+        // 2) Spot (s K-korekcijom)
         val corrPct = try { corrStore.corrFlow.firstOrNull() ?: 0.0 } catch (_: Throwable) { 0.0 }
         val res = yahoo.getSpotEur()
         res.onFailure { return Result.retry() }
@@ -50,48 +48,32 @@ class AlertWorker(
         val raw = res.getOrNull() ?: return Result.retry()
         val spot = raw * (1.0 + corrPct)
 
+        // 3) Pogodak (tolerancija)
         val tolerance = 0.10
         val hit = abs(spot - selected) <= tolerance
 
         if (hit) {
             val alarmEnabled = try { settingsStore.alarmEnabledFlow.firstOrNull() ?: false } catch (_: Throwable) { false }
-
             if (alarmEnabled) {
-                AlarmService.start(ctx)
+                AlarmService.start(ctx)               // puni alarm (loop + vibra + STOP)
             } else {
-                postAlertNotification(selected, spot)
+                postAlertNotification(selected, spot) // samo notifikacija
             }
-
-            selectedStore.save(null)
+            selectedStore.save(null) // očisti aktivni alert
         }
 
+        // 4) Spremi last spot i poguraj Tile refresh
         spotStore.saveLast(spot)
         hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
+
         return Result.success()
     }
 
-    // --- safe notify helper ---
-    private fun safeNotify(id: Int, notification: android.app.Notification) {
-        try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                val granted = ContextCompat.checkSelfPermission(
-                    ctx,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-
-                if (granted) {
-                    NotificationManagerCompat.from(ctx).notify(id, notification)
-                }
-            } else {
-                NotificationManagerCompat.from(ctx).notify(id, notification)
-            }
-        } catch (_: SecurityException) { }
-    }
-
+    /** Notifikacija bez pokretanja AlarmService-a (koristi kanal "alerts"). */
     private fun postAlertNotification(hitAt: Double, current: Double) {
         val title = ctx.getString(R.string.app_name)
         val text = ctx.getString(
-            R.string.alert_hit_text,
+            R.string.alert_hit_text,                // "Alert hit @ %1$s (spot %2$s)"
             "€" + "%,.2f".format(hitAt),
             "€" + "%,.2f".format(current)
         )
@@ -104,7 +86,7 @@ class AlertWorker(
             .setAutoCancel(true)
             .build()
 
-        safeNotify(2002, notif)
+        NotificationManagerCompat.from(ctx).notify(2002, notif)
     }
 
     companion object {
@@ -112,6 +94,7 @@ class AlertWorker(
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
+        /** Periodično (15 min – minimum) */
         fun schedulePeriodic(context: Context) {
             val req = PeriodicWorkRequestBuilder<AlertWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(baseConstraints())
@@ -123,6 +106,7 @@ class AlertWorker(
             )
         }
 
+        /** Jednokratno – odmah (za test) */
         fun kickNow(context: Context) {
             val req = OneTimeWorkRequestBuilder<AlertWorker>()
                 .setConstraints(baseConstraints())

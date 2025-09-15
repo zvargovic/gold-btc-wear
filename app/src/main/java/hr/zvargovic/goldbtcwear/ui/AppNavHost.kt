@@ -1,10 +1,8 @@
 package hr.zvargovic.goldbtcwear.ui
 
-import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -16,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -50,30 +47,6 @@ import androidx.compose.ui.unit.sp
 
 private const val TAG_APP = "APP"
 private const val CHANNEL_ALERTS = "alerts"
-
-// --- safe notify helper ---
-private fun safeNotify(context: Context, id: Int, notification: android.app.Notification) {
-    try {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-
-            if (granted) {
-                NotificationManagerCompat.from(context).notify(id, notification)
-            } else {
-                Log.w(TAG_APP, "POST_NOTIFICATIONS not granted; skip notify(id=$id)")
-            }
-        } else {
-            NotificationManagerCompat.from(context).notify(id, notification)
-        }
-    } catch (se: SecurityException) {
-        Log.w(TAG_APP, "notify SecurityException: ${se.message}")
-    } catch (t: Throwable) {
-        Log.w(TAG_APP, "notify failed: ${t.message}")
-    }
-}
 
 @Composable
 fun AppNavHost() {
@@ -175,6 +148,8 @@ fun AppNavHost() {
                     while (closes.size > 200) closes.removeAt(0)
                     scope.launch { rsiStore.saveAll(closes.toList(), maxItems = 200) }
                     computeRsi(closes, rsiPeriod)?.let { rsi = it }
+
+                    // ⇩ odmah osvježi Tile
                     hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
                 }
             }
@@ -229,13 +204,17 @@ fun AppNavHost() {
             .setContentIntent(pi)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
 
-        safeNotify(context, 2001, builder.build())
+        try {
+            NotificationManagerCompat.from(context).notify(2001, builder.build())
+        } catch (t: Throwable) {
+            Log.w(TAG_APP, "notify failed: ${t.message}")
+        }
     }
 
-    // ✅ SADA POKREĆE PRAVI ALARM iz UI-a
+    // Poštuj Alarm ON/OFF postavku
     fun triggerAlertHit(context: Context, previousSelected: Double?, currentSpot: Double) {
         if (alarmEnabled) {
-            hr.zvargovic.goldbtcwear.alarm.AlarmService.start(context)
+            AlarmService.start(context)
         } else {
             postAlertNotification(context, previousSelected ?: currentSpot, currentSpot)
         }
@@ -243,9 +222,140 @@ fun AppNavHost() {
 
     // ===== UI navigacija =====
     NavHost(navController = navController, startDestination = "gold") {
-        // ...
-        // (ovaj dio ostaje identičan kao u tvojoj verziji – nisam dirao UI logiku)
-        // ...
+
+        composable("gold") {
+            LaunchedEffect(needsKey) {
+                if (needsKey) {
+                    navController.navigate("setup") {
+                        popUpTo("gold") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            }
+
+            GoldStaticScreen(
+                onOpenAlerts = { navController.navigate("alerts") },
+                onOpenSetup  = { navController.navigate("setup") },
+
+                alerts = alerts,
+                selectedAlert = selectedAlert.value,
+                onSelectAlert = { v ->
+                    val prev = selectedAlert.value
+                    selectedAlert.value = v
+                    scope.launch { selectedStore.save(v) }
+                    if (prev != null && v == null) triggerAlertHit(ctx, prev, spot)
+                },
+
+                spot = spot,
+                activeService = activeService,
+                onToggleService = { /* no-op: UI je Yahoo×K */ },
+
+                refSpot = refSpot,
+                rsi = rsi,
+
+                onSetRefSpot = {
+                    val v = spot
+                    scope.launch { spotStore.setRef(v) }
+                },
+
+                reqUsedThisMonth = dayUsed,
+                reqMonthlyQuota = reqLimit,
+
+                kFactorPct = corrPct,
+                kTextExtraStep = +8,
+                kTextRadialOffsetPx = 0f
+            )
+
+            // Jednolinijski badge
+            if (closedLine != null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        modifier = Modifier
+                            .offset(y = -2.dp)
+                            .background(
+                                color = Color(0x11FFFFFF),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = closedLine!!,
+                            color = Color(0xFFF60303),
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+
+            if (needsKey) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(stringResource(R.string.enter_api_key_overlay))
+                }
+            }
+        }
+
+        composable("alerts") {
+            AlertsScreen(
+                onBack = { navController.popBackStack(); Unit },
+                onAdd = { navController.navigate("addAlert") },
+                onDelete = { price ->
+                    alerts.remove(price)
+                    scope.launch { alertsStore.save(alerts.toList()) }
+                    if (selectedAlert.value != null && abs(selectedAlert.value!! - price) < 0.0001) {
+                        selectedAlert.value = null
+                        scope.launch { selectedStore.save(null) }
+                    }
+                },
+                alerts = alerts,
+                spot = spot
+            )
+        }
+
+        composable("addAlert") {
+            AddAlertScreen(
+                spot = spot,
+                onBack = { navController.popBackStack(); Unit },
+                onConfirm = { value ->
+                    if (value.isFinite() && value > 0.0 &&
+                        alerts.none { abs(it - value) < 0.0001 }
+                    ) {
+                        alerts.add(value)
+                        alerts.sort()
+                        scope.launch { alertsStore.save(alerts.toList()) }
+                    }
+                    navController.popBackStack(); Unit
+                }
+            )
+        }
+
+        composable("setup") {
+            SetupScreen(
+                apiKey = apiKey ?: "",
+                alarmEnabled = alarmEnabled,
+                onBack = { navController.popBackStack() },
+                onSave = { key, alarm ->
+                    scope.launch {
+                        settingsStore.saveAll(apiKey = key, alarmEnabled = alarm)
+                        Log.i(TAG_APP, "settings saved -> apiKey=${mask(key)}, alarm=$alarm")
+                        // fallback za Workera
+                        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                            .edit().putString("api_key", key).apply()
+                    }
+                    needsKey = key.isBlank()
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
 
