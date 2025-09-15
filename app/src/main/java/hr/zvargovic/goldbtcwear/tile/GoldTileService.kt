@@ -2,18 +2,18 @@ package hr.zvargovic.goldbtcwear.tile
 
 import android.content.Context
 import androidx.wear.tiles.RequestBuilders
-import androidx.wear.tiles.ResourceBuilders as TileResBuilders
 import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
+import androidx.wear.tiles.ResourceBuilders as TileResBuilders
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
 // ProtoLayout
 import androidx.wear.protolayout.ActionBuilders
+import androidx.wear.protolayout.ColorBuilders
 import androidx.wear.protolayout.DimensionBuilders
 import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.ModifiersBuilders
-import androidx.wear.protolayout.ColorBuilders
 import androidx.wear.protolayout.TimelineBuilders as ProtoTL
 
 import hr.zvargovic.goldbtcwear.data.SpotStore
@@ -24,7 +24,7 @@ import java.util.Locale
 
 class GoldTileService : TileService() {
 
-    // --- helpers (kratki) ---
+    // helpers
     private fun c(argb: Int) = ColorBuilders.argb(argb)
     private fun dp(v: Float) = DimensionBuilders.dp(v)
     private fun sp(v: Float) = DimensionBuilders.SpProp.Builder().setValue(v).build()
@@ -33,7 +33,7 @@ class GoldTileService : TileService() {
         requestParams: RequestBuilders.TileRequest
     ): ListenableFuture<TileBuilders.Tile> {
 
-        // --- data (kratko blocking čitanje iz DataStore-a) ---
+        // --- Data (kratko blocking čitanje iz DataStore-a) ---
         val store = SpotStore(applicationContext)
         val spot: Double? = runBlocking { store.lastSpotFlow.firstOrNull() }
         val ref : Double? = runBlocking { store.refSpotFlow.firstOrNull() }
@@ -61,7 +61,7 @@ class GoldTileService : TileService() {
             )
             .build()
 
-        // --- WEATHER-LIKE CARD LAYOUT (dark + orange accent) ---
+        // Layout
         val layout = buildTileLayout(
             spotTxt = spotTxt,
             deltaTxt = deltaTxt,
@@ -80,6 +80,8 @@ class GoldTileService : TileService() {
         val tile = TileBuilders.Tile.Builder()
             .setResourcesVersion("1")
             .setTileTimeline(timeline)
+            // traži svježe podatke barem svake minute kad je tile aktivan
+            .setFreshnessIntervalMillis(60_000)
             .build()
 
         return Futures.immediateFuture(tile)
@@ -94,19 +96,18 @@ class GoldTileService : TileService() {
         return Futures.immediateFuture(res)
     }
 
-    // === WEATHER-STYLE CARD ===
+    /** Weather-style kartica s tvojim bojama. */
     private fun buildTileLayout(
         spotTxt: String,
         deltaTxt: String,
         deltaIsPos: Boolean,
         click: ModifiersBuilders.Clickable
     ): LayoutElementBuilders.Layout {
-        val cardBg  = c(0xFF121212.toInt())          // tamna kartica
-        val titleCol= c(0xFFFF7A00.toInt())          // tvoja narančasta
-        val priceCol= c(0xFFEDE7DE.toInt())          // toplo svijetla
-        val deltaCol= if (deltaIsPos) c(0xFF38D66B.toInt()) else c(0xFFF05454.toInt())
+        val cardBg   = c(0xFF121212.toInt())            // tamna kartica
+        val titleCol = c(0xFFFF7A00.toInt())            // narančasta (brand)
+        val priceCol = c(0xFFEDE7DE.toInt())            // toplo svijetla
+        val deltaCol = if (deltaIsPos) c(0xFF38D66B.toInt()) else c(0xFFF05454.toInt())
 
-        // TITLE: GOLD
         val title = LayoutElementBuilders.Text.Builder()
             .setText("GOLD")
             .setFontStyle(
@@ -122,7 +123,6 @@ class GoldTileService : TileService() {
             )
             .build()
 
-        // PRICE
         val price = LayoutElementBuilders.Text.Builder()
             .setText(spotTxt)
             .setFontStyle(
@@ -138,7 +138,6 @@ class GoldTileService : TileService() {
             )
             .build()
 
-        // DELTA
         val delta = LayoutElementBuilders.Text.Builder()
             .setText(deltaTxt)
             .setFontStyle(
@@ -149,20 +148,14 @@ class GoldTileService : TileService() {
             )
             .build()
 
-        // vertical stack
         val column = LayoutElementBuilders.Column.Builder()
             .addContent(title)
-            .addContent(
-                LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build()
-            )
+            .addContent(LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build())
             .addContent(price)
-            .addContent(
-                LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build()
-            )
+            .addContent(LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build())
             .addContent(delta)
             .build()
 
-        // card box with background, rounding, padding, click
         val cardBox = LayoutElementBuilders.Box.Builder()
             .setModifiers(
                 ModifiersBuilders.Modifiers.Builder()
@@ -171,14 +164,14 @@ class GoldTileService : TileService() {
                             .setColor(cardBg)
                             .setCorner(
                                 ModifiersBuilders.Corner.Builder()
-                                    .setRadius(dp(18f))   // zaobljenje kao Weather
+                                    .setRadius(dp(18f))
                                     .build()
                             )
                             .build()
                     )
                     .setPadding(
                         ModifiersBuilders.Padding.Builder()
-                            .setAll(dp(14f))          // “puffy” osjećaj
+                            .setAll(dp(14f))
                             .build()
                     )
                     .setClickable(click)
@@ -187,7 +180,6 @@ class GoldTileService : TileService() {
             .addContent(column)
             .build()
 
-        // root — centrirana kartica
         return LayoutElementBuilders.Layout.Builder()
             .setRoot(
                 LayoutElementBuilders.Box.Builder()
@@ -199,8 +191,8 @@ class GoldTileService : TileService() {
 
     companion object {
         fun requestUpdate(context: Context) {
-            TileService.getUpdater(context)
-                .requestUpdate(GoldTileService::class.java)
+            // odmah poguraj refresh kad ima nova cijena
+            TileService.getUpdater(context).requestUpdate(GoldTileService::class.java)
         }
     }
 }

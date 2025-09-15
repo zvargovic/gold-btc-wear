@@ -53,25 +53,23 @@ class AlertWorker(
         val hit = abs(spot - selected) <= tolerance
 
         if (hit) {
-            // Poštuj korisničku postavku
             val alarmEnabled = try { settingsStore.alarmEnabledFlow.firstOrNull() ?: false } catch (_: Throwable) { false }
-
             if (alarmEnabled) {
-                AlarmService.start(ctx)                 // puni alarm (loop zvuk + vibra + STOP)
+                AlarmService.start(ctx)               // puni alarm (loop + vibra + STOP)
             } else {
-                postAlertNotification(selected, spot)   // samo obična notifikacija
+                postAlertNotification(selected, spot) // samo notifikacija
             }
-
             selectedStore.save(null) // očisti aktivni alert
         }
 
-        // 4) Informativno spremi last spot
+        // 4) Spremi last spot i poguraj Tile refresh
         spotStore.saveLast(spot)
         hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
+
         return Result.success()
     }
 
-    /** Notifikacija bez pokretanja AlarmService-a (koristi postojeći "alerts" kanal). */
+    /** Notifikacija bez pokretanja AlarmService-a (koristi kanal "alerts"). */
     private fun postAlertNotification(hitAt: Double, current: Double) {
         val title = ctx.getString(R.string.app_name)
         val text = ctx.getString(

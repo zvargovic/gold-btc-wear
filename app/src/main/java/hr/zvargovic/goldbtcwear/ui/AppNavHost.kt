@@ -18,7 +18,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import hr.zvargovic.goldbtcwear.R
-import hr.zvargovic.goldbtcwear.alarm.AlarmService              // ✅ DODANO
+import hr.zvargovic.goldbtcwear.alarm.AlarmService
 import hr.zvargovic.goldbtcwear.data.*
 import hr.zvargovic.goldbtcwear.data.api.YahooService
 import hr.zvargovic.goldbtcwear.presentation.AddAlertScreen
@@ -148,6 +148,8 @@ fun AppNavHost() {
                     while (closes.size > 200) closes.removeAt(0)
                     scope.launch { rsiStore.saveAll(closes.toList(), maxItems = 200) }
                     computeRsi(closes, rsiPeriod)?.let { rsi = it }
+
+                    // ⇩ odmah osvježi Tile
                     hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
                 }
             }
@@ -209,13 +211,11 @@ fun AppNavHost() {
         }
     }
 
-    // ✅ SADA POKREĆE PRAVI ALARM iz UI-a
+    // Poštuj Alarm ON/OFF postavku
     fun triggerAlertHit(context: Context, previousSelected: Double?, currentSpot: Double) {
-        // ako je alarm uključen -> pravi alarm (servis + full screen)
         if (alarmEnabled) {
-            hr.zvargovic.goldbtcwear.alarm.AlarmService.start(context)
+            AlarmService.start(context)
         } else {
-            // inače samo normalna notifikacija (sa zvukom kanala, ali bez loop/vibre)
             postAlertNotification(context, previousSelected ?: currentSpot, currentSpot)
         }
     }
@@ -224,7 +224,6 @@ fun AppNavHost() {
     NavHost(navController = navController, startDestination = "gold") {
 
         composable("gold") {
-            // Ako si na gold i nema ključa → tek tada idi u setup
             LaunchedEffect(needsKey) {
                 if (needsKey) {
                     navController.navigate("setup") {
@@ -267,16 +266,16 @@ fun AppNavHost() {
                 kTextRadialOffsetPx = 0f
             )
 
-            // --- JEDNOLINIJSKI, MALI BADGE (kompaktan i proziran) ---
+            // Jednolinijski badge
             if (closedLine != null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         modifier = Modifier
-                            .offset(y = -2.dp) // pozicija ispod spota
+                            .offset(y = -2.dp)
                             .background(
                                 color = Color(0x11FFFFFF),
                                 shape = RoundedCornerShape(8.dp)
@@ -295,7 +294,6 @@ fun AppNavHost() {
                 }
             }
 
-            // Overlay SAMO kad ključa nema
             if (needsKey) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -353,9 +351,7 @@ fun AppNavHost() {
                         ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
                             .edit().putString("api_key", key).apply()
                     }
-                    // Odmah ugasi overlay lokalno (ne čekaj flow emit)
                     needsKey = key.isBlank()
-                    // Natrag na "gold"
                     navController.popBackStack()
                 }
             )
