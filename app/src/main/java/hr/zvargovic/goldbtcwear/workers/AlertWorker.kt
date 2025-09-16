@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.firstOrNull
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
+// ★ Novo: finalna korekcija (fiksni + %) na istoj finalnoj cijeni kao UI
+import hr.zvargovic.goldbtcwear.domain.usecase.PriceAdjuster
+
 private const val UNIQUE_PERIODIC_NAME = "alert-worker-periodic"
 
 class AlertWorker(
@@ -40,30 +43,31 @@ class AlertWorker(
         // 1) Selektirani alert
         val selected = selectedStore.load() ?: return Result.success()
 
-        // 2) Spot (s K-korekcijom)
+        // 2) Spot (legacy K iz TD) → FINAL (hardkod korekcija)
         val corrPct = try { corrStore.corrFlow.firstOrNull() ?: 0.0 } catch (_: Throwable) { 0.0 }
         val res = yahoo.getSpotEur()
         res.onFailure { return Result.retry() }
 
         val raw = res.getOrNull() ?: return Result.retry()
-        val spot = raw * (1.0 + corrPct)
+        val withK = raw * (1.0 + corrPct)
+        val shown = PriceAdjuster.apply(withK) // FINAL kao na glavnom ekranu
 
-        // 3) Pogodak (tolerancija)
+        // 3) Pogodak (tolerancija) NAD FINALNOM CIJENOM
         val tolerance = 0.10
-        val hit = abs(spot - selected) <= tolerance
+        val hit = abs(shown - selected) <= tolerance
 
         if (hit) {
             val alarmEnabled = try { settingsStore.alarmEnabledFlow.firstOrNull() ?: false } catch (_: Throwable) { false }
             if (alarmEnabled) {
-                AlarmService.start(ctx)               // puni alarm (loop + vibra + STOP)
+                AlarmService.start(ctx)
             } else {
-                postAlertNotification(selected, spot) // samo notifikacija
+                postAlertNotification(selected, shown)
             }
-            selectedStore.save(null) // očisti aktivni alert
+            selectedStore.save(null)
         }
 
-        // 4) Spremi last spot i poguraj Tile refresh
-        spotStore.saveLast(spot)
+        // 4) Spremi LAST = FINAL i osvježi Tile
+        spotStore.saveLast(shown)
         hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
 
         return Result.success()
@@ -73,7 +77,7 @@ class AlertWorker(
     private fun postAlertNotification(hitAt: Double, current: Double) {
         val title = ctx.getString(R.string.app_name)
         val text = ctx.getString(
-            R.string.alert_hit_text,                // "Alert hit @ %1$s (spot %2$s)"
+            R.string.alert_hit_text,
             "€" + "%,.2f".format(hitAt),
             "€" + "%,.2f".format(current)
         )
@@ -94,7 +98,6 @@ class AlertWorker(
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        /** Periodično (15 min – minimum) */
         fun schedulePeriodic(context: Context) {
             val req = PeriodicWorkRequestBuilder<AlertWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(baseConstraints())
@@ -106,7 +109,6 @@ class AlertWorker(
             )
         }
 
-        /** Jednokratno – odmah (za test) */
         fun kickNow(context: Context) {
             val req = OneTimeWorkRequestBuilder<AlertWorker>()
                 .setConstraints(baseConstraints())

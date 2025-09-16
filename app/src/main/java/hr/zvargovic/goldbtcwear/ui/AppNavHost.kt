@@ -45,6 +45,9 @@ import java.time.Instant
 import androidx.compose.ui.unit.sp
 // ------------------------------------------
 
+// ★ Novo: konačna korekcija (fiksni + %) na FINALNU cijenu
+import hr.zvargovic.goldbtcwear.domain.usecase.PriceAdjuster
+
 private const val TAG_APP = "APP"
 private const val CHANNEL_ALERTS = "alerts"
 
@@ -68,6 +71,8 @@ fun AppNavHost() {
     var spot by remember { mutableStateOf(2315.40) }
 
     val activeService = PriceService.Yahoo
+
+    // Legacy K (TdCorrWorker): i dalje računamo raw×(1+K), ALI zatim primjenjujemo hardkod korekciju.
     val corrPct by corrStore.corrFlow.collectAsState(initial = 0.0)
 
     val dayUsed by quotaStore.dayUsedFlow.collectAsState(initial = 0)
@@ -132,24 +137,26 @@ fun AppNavHost() {
         computeRsi(closes, rsiPeriod)?.let { rsi = it }
     }
 
-    // Yahoo ticker + korekcija + spremanje + RSI feed
+    // Yahoo ticker: RAW → (×(1+K)) → PriceAdjuster(final) → shown; spremi SHOWN
     LaunchedEffect(corrPct) {
         while (true) {
             val result = yahoo.getSpotEur()
             result.onSuccess { raw ->
-                val k = 1.0 + corrPct
-                val corrected = raw * k
-                if (corrected.isFinite() && corrected > 0.0) {
-                    spot = corrected
-                    scope.launch { spotStore.saveLast(corrected) }
-                    if (refSpot == null) scope.launch { spotStore.setRef(corrected) }
+                val withK = raw * (1.0 + corrPct)            // legacy K s TD
+                val shown = PriceAdjuster.apply(withK)        // HARDKOD FINAL
 
-                    closes += corrected
+                if (shown.isFinite() && shown > 0.0) {
+                    spot = shown
+
+                    // spremamo SHOWN (ekran = tile = zadnje poznato)
+                    scope.launch { spotStore.saveLast(shown) }
+                    if (refSpot == null) scope.launch { spotStore.setRef(shown) }
+
+                    closes += shown
                     while (closes.size > 200) closes.removeAt(0)
                     scope.launch { rsiStore.saveAll(closes.toList(), maxItems = 200) }
                     computeRsi(closes, rsiPeriod)?.let { rsi = it }
 
-                    // ⇩ odmah osvježi Tile
                     hr.zvargovic.goldbtcwear.tile.GoldTileService.requestUpdate(ctx)
                 }
             }
@@ -248,7 +255,7 @@ fun AppNavHost() {
 
                 spot = spot,
                 activeService = activeService,
-                onToggleService = { /* no-op: UI je Yahoo×K */ },
+                onToggleService = { /* no-op: UI je Yahoo×K×final */ },
 
                 refSpot = refSpot,
                 rsi = rsi,
@@ -261,6 +268,7 @@ fun AppNavHost() {
                 reqUsedThisMonth = dayUsed,
                 reqMonthlyQuota = reqLimit,
 
+                // i dalje prikazujemo legacy K badge na skali
                 kFactorPct = corrPct,
                 kTextExtraStep = +8,
                 kTextRadialOffsetPx = 0f
